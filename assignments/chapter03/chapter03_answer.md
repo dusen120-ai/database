@@ -39,7 +39,7 @@ GitHub 계정 또는 별칭: dusen120-ai
 | DBeaver 버전 | 26.2.0 |
 | Host | localhost |
 | Port | 5432 |
-| Database | postgres (연결 설정 화면 기준 — 실제 접속 DB는 3~4장에서 SQL로 재검증) |
+| Database | postgres |
 | Username | postgres |
 
 > 비밀번호는 기록하지 않습니다.
@@ -481,7 +481,7 @@ GitHub 공개 저장소나 AI 대화 내용은 나중에 다른 사람이나 다
    DBeaver는 서버에 접속해 SQL을 보내고 결과를 보여주는 클라이언트일 뿐이고, 실제 데이터와 구조를 저장·관리하는 것은 PostgreSQL 서버라는 것 이다.
 
 2. 내가 지금 어느 데이터베이스에 연결되어 있는지 확인할 때
-   화면 이름만 보지 않고 SELECT current_database();를 직접 실행해서 서버가 돌려주는 값을 확인 해야 한다.
+   화면 이름만 보지 않고 SELECT current_database();를 실행해서 서버가 돌려주는 값을 확인 해야 한다.
 
 3. PostgreSQL 오류가 발생했을 때 가장 먼저 해야 할 일은
    오류 메시지 전체(코드, 문구, Position 등)를 끝까지 읽고 어떤 유형(문법/연결/권한 등)의 문제인지부터 구분하는 것 이다.

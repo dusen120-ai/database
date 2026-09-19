@@ -505,8 +505,8 @@ GitHub 공개 저장소나 AI 대화 내용은 나중에 다른 사람이나 다
 - [x] AI 제안을 실제 환경에서 검증했다.
 - [x] 핵심 캡처 5장을 골라 넣었다.
 - [x] 캡처에 비밀번호·개인정보·전체 접속 URL이 없다.
-- [ ] Markdown 이미지가 GitHub 웹 화면에서 실제로 보인다.
-- [ ] 최종 답안 파일을 commit/push했다.
+- [x] Markdown 이미지가 GitHub 웹 화면에서 실제로 보인다.
+- [x] 최종 답안 파일을 commit/push했다.
 
 ---
 
@@ -521,7 +521,7 @@ https://github.com/<본인-GitHub-ID>/<본인-저장소>/blob/main/assignments/c
 내 제출 URL:
 
 ```text
-
+https://github.com/dusen120-ai/database/blob/main/assignments/chapter03/chapter03_answer.md
 ```
 
 > 저장소 메인 URL, 교수자 템플릿 URL, Raw URL이 아니라 **작성 완료된 본인 `chapter03_answer.md` 파일 화면 URL**을 제출합니다.

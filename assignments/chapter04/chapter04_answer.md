@@ -759,10 +759,10 @@ CREATE TABLE public.cafes (
 - [x] `verify_students.sql`로 상태를 확인했다.
 - [x] AI 제안을 실제 SQL 결과와 비교했다.
 - [x] 개인 서비스 테이블 하나를 확장 설계했다.
-- [ ] 핵심 캡처는 3~4장 정도로 제한했다.
-- [ ] 비밀번호·개인정보가 캡처에 없다.
-- [ ] Markdown 이미지가 GitHub 웹 화면에서 정상 표시된다.
-- [ ] commit/push를 완료했다.
+- [x] 핵심 캡처는 3~4장 정도로 제한했다. (단계별 증거 5장)
+- [x] 비밀번호·개인정보가 캡처에 없다.
+- [x] Markdown 이미지가 GitHub 웹 화면에서 정상 표시된다.
+- [x] commit/push를 완료했다.
 
 ---
 

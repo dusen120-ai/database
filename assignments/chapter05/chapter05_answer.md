@@ -797,8 +797,8 @@ CREATE TABLE public.visit_items (
 - [x] 개인 서비스 작은 데이터 시나리오를 검증했다.
 - [x] AI 제안을 수용/수정/보류/거절로 판단했다.
 - [x] 핵심 캡처 또는 ERD 이미지 3~4장 이내로 정리했다.
-- [ ] 이미지가 GitHub 웹 화면에서 실제로 보인다.
-- [ ] 답안 파일을 commit/push했다.
+- [x] 이미지가 GitHub 웹 화면에서 실제로 보인다.
+- [x] 답안 파일을 commit/push했다.
 
 ---
 

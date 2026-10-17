@@ -398,11 +398,11 @@ code/chapter06/05_integrity_tests.sql
 
 | 테스트 | 예상 | 실제 | 왜 허용되어야 하는가 |
 | --- | --- | --- | --- |
-| `due_at = borrowed_at` | 성공 |  |  |
-| `returned_at = borrowed_at` | 성공 |  |  |
-| `returned_at = NULL` | 성공 |  |  |
-| `published_year = NULL` | 성공 |  |  |
-| 공백이 아닌 한 글자 이름 | 성공 |  |  |
+| `due_at = borrowed_at` | 성공 | 성공 (경계 A) | 당일 반납 예정도 정상 대여다. 규칙은 `>=`라서 같은 날은 허용된다. |
+| `returned_at = borrowed_at` | 성공 | 성공 (경계 A) | 빌린 날 바로 반납하는 것은 실제로 있을 수 있는 정상 사건이다. |
+| `returned_at = NULL` | 성공 |  | NULL은 아직 반납하지 않았다는 뜻이다. 미반납 대여를 저장할 수 있어야 한다. |
+| `published_year = NULL` | 성공 | 성공 (경계 B) | 출판연도는 필수 규칙이 아니다. 연도를 모르는 책도 등록할 수 있어야 한다. |
+| 공백이 아닌 한 글자 이름 | 성공 | 성공 (경계 C) | '김'처럼 짧아도 실제 값이다. CHECK는 공백만 있는 값만 막아야 한다. |
 
 ## 8-2. 실패해야 하는 오류값
 

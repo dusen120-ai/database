@@ -400,7 +400,7 @@ code/chapter06/05_integrity_tests.sql
 | --- | --- | --- | --- |
 | `due_at = borrowed_at` | 성공 | 성공 (경계 A) | 당일 반납 예정도 정상 대여다. 규칙은 `>=`라서 같은 날은 허용된다. |
 | `returned_at = borrowed_at` | 성공 | 성공 (경계 A) | 빌린 날 바로 반납하는 것은 실제로 있을 수 있는 정상 사건이다. |
-| `returned_at = NULL` | 성공 |  | NULL은 아직 반납하지 않았다는 뜻이다. 미반납 대여를 저장할 수 있어야 한다. |
+| `returned_at = NULL` | 성공 | 성공 (경계 D) | NULL은 아직 반납하지 않았다는 뜻이다. 미반납 대여를 저장할 수 있어야 한다. |
 | `published_year = NULL` | 성공 | 성공 (경계 B) | 출판연도는 필수 규칙이 아니다. 연도를 모르는 책도 등록할 수 있어야 한다. |
 | 공백이 아닌 한 글자 이름 | 성공 | 성공 (경계 C) | '김'처럼 짧아도 실제 값이다. CHECK는 공백만 있는 값만 막아야 한다. |
 
@@ -408,18 +408,23 @@ code/chapter06/05_integrity_tests.sql
 
 최소 6개를 실행합니다.
 
+> 처음에는 `05_integrity_tests.sql`의 테스트를 주석을 풀어 ⌘+Enter로 하나씩 실행했다(`code/chapter06/my_05_tests_one_by_one.sql`).
+> 오류 메시지를 한 번에 기록하기 위해 같은 테스트를 각각 `BEGIN ... EXCEPTION` 블록으로 따로 실행하고 SQLSTATE·제약조건 이름·메시지를 표로 모으는 `code/chapter06/my_05_test_report.sql`로 다시 실행했다. 아래 표는 그 결과다. (16개 테스트 모두 예상 = 실제)
+>
+> 오류 10은 SQLSTATE가 `23503`(foreign_key_violation)이 아니라 `23001`(restrict_violation)로 나왔다. `ON DELETE RESTRICT`로 만든 FK라서 PostgreSQL이 'RESTRICT 설정 위반'으로 따로 구분해 알려 준 것이다.
+
 | 오류 테스트 | 기대 규칙 | 실제 결과 | 오류 메시지 핵심 | 실패해야 하는 이유 |
 | --- | --- | --- | --- | --- |
-| 필수값 NULL | `NOT NULL` |  |  |  |
-| ISBN NULL | `NOT NULL` |  |  |  |
-| 이메일 중복 | `UNIQUE` |  |  |  |
-| ISBN 중복 | `UNIQUE` |  |  |  |
-| 공백 이름/제목 | `CHECK` |  |  |  |
-| 존재하지 않는 회원 | `FOREIGN KEY` |  |  |  |
-| 존재하지 않는 도서 | `FOREIGN KEY` |  |  |  |
-| 날짜 순서 위반 | `CHECK` |  |  |  |
-| 두 번째 미반납 대여 | 부분 고유 인덱스 | 실패 (SQL Error [23505]) | `duplicate key value violates unique constraint "uq_loans_nf_active_book"` / `Key (book_id)=(201) already exists.` | 도서 201은 대여 1003이 아직 반납되지 않았다. 한 권을 동시에 두 사람이 빌린 상태가 되면 안 된다. |
-| 참조 중 부모 삭제 | `RESTRICT/FK` |  |  |  |
+| 필수값 NULL | `NOT NULL` | 실패 (23502) | `null value in column "name" of relation "members_nf" violates not-null constraint` | 이름이 없는 회원은 누구인지 알 수 없다. |
+| ISBN NULL | `NOT NULL` | 실패 (23502) | `null value in column "isbn" of relation "books_nf" violates not-null constraint` | C-02에서 ISBN을 필수로 확정했다. |
+| 이메일 중복 | `UNIQUE` | 실패 (23505) | `duplicate key value violates unique constraint "uq_members_nf_email"` | junho@example.com은 이미 회원 102의 이메일이다. (C-01) |
+| ISBN 중복 | `UNIQUE` | 실패 (23505) | `duplicate key value violates unique constraint "uq_books_nf_isbn"` | ISBN-001은 이미 도서 201의 ISBN이다. (C-02) |
+| 공백 이름/제목 | `CHECK` | 실패 (23514) ×2 | `violates check constraint "chk_members_nf_name_not_blank"` / `"chk_books_nf_title_not_blank"` | `'   '`는 NULL은 아니지만 실제로는 값이 없는 것이다. (C-03) |
+| 존재하지 않는 회원 | `FOREIGN KEY` | 실패 (23503) | `insert or update on table "loans_nf" violates foreign key constraint "fk_loans_nf_member"` | 회원 999가 없으므로 고아 대여가 된다. (C-06) |
+| 존재하지 않는 도서 | `FOREIGN KEY` | 실패 (23503) | `insert or update on table "loans_nf" violates foreign key constraint "fk_loans_nf_book"` | 도서 999가 없으므로 고아 대여가 된다. (C-06) |
+| 날짜 순서 위반 | `CHECK` | 실패 (23514) ×2 | `violates check constraint "chk_loans_nf_due_date"` / `"chk_loans_nf_returned_date"` | 반납 예정일·실제 반납일이 대여일(4/20)보다 앞선다. (C-04, C-05) |
+| 두 번째 미반납 대여 | 부분 고유 인덱스 | 실패 (23505) | `duplicate key value violates unique constraint "uq_loans_nf_active_book"` / `Key (book_id)=(201) already exists.` | 도서 201은 대여 1003이 아직 반납되지 않았다. 한 권을 동시에 두 사람이 빌린 상태가 되면 안 된다. |
+| 참조 중 부모 삭제 | `RESTRICT/FK` | 실패 (23001) | `update or delete on table "members_nf" violates RESTRICT setting of foreign key constraint "fk_loans_nf_member" on table "loans_nf"` | 회원 101은 대여 이력 2건이 있다. 지우면 이력이 고아가 된다. (C-07) |
 
 ## 8-3. 테스트 후 기준 상태 재검증
 

@@ -1,0 +1,716 @@
+# Chapter 06 확장 실습 답안
+
+> **과제:** 정규화와 데이터 무결성으로 좋은 테이블 만들기  
+> **사용 방법:** 이 파일을 내려받아 본인의 GitHub 저장소에 `chapter06_answer.md`라는 이름으로 저장한 뒤 실습하면서 바로 작성합니다.  
+> **제출 방법:** LMS에는 파일을 직접 업로드하지 않고, **본인 GitHub 저장소의 `chapter06_answer.md` 파일 URL**을 제출합니다.
+
+---
+
+## 제출 전 주의
+
+이 파일과 캡처 화면에는 실제 비밀번호, 전체 DB 접속 URL, API Key, 개인정보를 기록하지 않습니다.
+
+```text
+GitHub 계정 또는 별칭: dusen120-ai
+과제 작성일: 2026-10-17
+사용한 AI 도구: Claude (Claude Code)
+```
+
+---
+
+# 1. 실습 환경과 시작 상태 확인
+
+다음을 실행합니다.
+
+```sql
+SELECT current_database();
+SELECT current_user;
+SELECT current_schema();
+SHOW search_path;
+SHOW transaction_read_only;
+```
+
+| 확인 항목 | 실제 결과 | 의미 |
+| --- | --- | --- |
+| `current_database()` | `ai_database_book` | 실습용 DB에 연결되어 있다. |
+| `current_user` | `postgres` | 테이블을 만들고 제약조건을 추가할 사용자다. 01~05를 모두 같은 사용자로 실행한다. |
+| `current_schema()` | `public` | 이름만 쓴 테이블은 public에 만들어진다. (실습 SQL은 `public.`을 직접 붙여 쓴다.) |
+| `search_path` | `public, "$user"` | 테이블 이름을 찾는 순서다. public을 먼저 찾는다. |
+| `transaction_read_only` | `off` | 읽기 전용이 아니라서 테이블 생성·입력·변경이 가능하다. |
+
+- [x] 현재 DB가 `ai_database_book`이다.
+- [x] 변경 가능한 연결인지 확인했다.
+- [x] Auto-commit 상태를 확인했다. (DBeaver 툴바 `Auto`, Commit/Rollback 버튼 비활성 → Auto-commit 켜짐)
+- [x] Chapter 06 번호형 SQL 파일을 사용한다. (`code/chapter06/01~05_*.sql`)
+
+---
+
+# 2. 정규화 전 큰 테이블의 문제 찾기
+
+본문의 `library_records_raw` 구조를 기준으로 생각합니다.
+
+```text
+library_records_raw 한 행
+→ 대여 사건 한 건이지만 회원·도서의 현재 사실까지 함께 저장된 구조
+```
+
+## 2-1. 위험한 중복과 의미 있는 반복 구분
+
+| 반복되는 값/상황 | 위험한 중복 / 의미 있는 반복 | 판단 이유 |
+| --- | --- | --- |
+| 회원 이메일이 여러 대여 행에 반복 | 위험한 중복 | 이메일은 회원의 현재 사실인데 대여 행마다 복사되어 있다. 바뀌면 모든 행을 고쳐야 하고, 하나라도 놓치면 같은 회원의 이메일이 두 개가 된다. |
+| 도서 제목이 여러 대여 행에 반복 | 위험한 중복 | 제목은 도서의 사실이지 대여 사건의 사실이 아니다. 오타를 고칠 때 일부 행만 고치면 같은 책이 다른 제목으로 남는다. |
+| `loans_nf.member_id = 101` 반복 | 의미 있는 반복 | 회원 101이 여러 번 빌렸다는 사건이 여러 건이라는 뜻이다. 반복되는 것은 회원 정보가 아니라 회원을 가리키는 번호(FK)뿐이고, 이름·이메일은 `members_nf`에 한 번만 있다. |
+| 사건 당시 가격 같은 이력값 반복 | 의미 있는 반복 | 그때의 가격은 사건이 일어난 순간의 사실이라 나중에 현재 가격이 바뀌어도 바뀌면 안 된다. 같은 값이 여러 행에 있어도 각 행이 각자의 사건을 기록한 것이다. (Ch05 카페 기록의 `visit_items.price`와 같은 경우) |
+
+## 2-2. 이상 현상 설명
+
+### 삽입 이상
+
+```text
+아직 한 번도 대여되지 않은 새 도서를 등록하려 할 때 생기는 문제:
+  library_records_raw의 한 행은 '대여 한 건'이라서, 대여가 없으면 도서를 넣을 자리가 없다.
+  억지로 넣으려면 member_name, borrowed_at 등을 NULL로 비운 가짜 대여 행을 만들어야 한다.
+  (같은 이유로 아직 한 번도 빌리지 않은 새 회원도 등록할 수 없다.)
+```
+
+### 수정 이상
+
+```text
+회원 이메일이 변경될 때 생기는 문제:
+  김민지의 이메일이 1001, 1002 두 행에 들어 있어서 두 행을 모두 고쳐야 한다.
+  한 행만 고치면 같은 사람이 이메일을 두 개 가진 것처럼 보이고, 어느 쪽이 맞는지 알 수 없다.
+```
+
+### 삭제 이상
+
+```text
+마지막 대여 기록을 삭제할 때 생길 수 있는 문제:
+  이준호는 1003 한 행에만 있다. 이 대여 기록을 지우면 이준호라는 회원이 있었다는 사실(이름, 이메일)까지 같이 사라진다.
+  '대여 기록 삭제'와 '회원 삭제'가 따로 일어나야 하는데 한 행에 묶여 있어서 함께 지워진다.
+```
+
+### 왜 이것이 SQL 문법 문제가 아니라 구조 문제인가요?
+
+```text
+INSERT, UPDATE, DELETE 문장은 문법상 모두 정상적으로 실행된다.
+문제는 한 행에 '대여 사건'과 '회원·도서의 현재 사실'이 섞여 있다는 테이블 구조에서 나온다.
+그래서 SQL을 아무리 조심해서 써도 같은 사실이 여러 곳에 있는 한 이상 현상이 생길 수 있고,
+사실마다 주인 테이블을 나누는 구조 변경으로 해결해야 한다.
+```
+
+---
+
+# 3. 1NF·2NF·3NF 핵심 질문 복습
+
+정규형 이름만 외우지 말고 **왜 분리하는지** 설명합니다.
+
+## 3-1. 제1정규형(1NF)
+
+```text
+한 셀에 쉼표로 여러 독립 값을 넣거나 book1/book2/book3처럼 반복 열을 만들면 왜 문제가 되는가:
+  - '데이터베이스 입문'을 빌린 회원 찾기처럼 값 하나를 검색·수정·삭제하기 어렵다. (문자열을 잘라서 비교해야 함)
+  - book1~book3처럼 열을 만들면 4권째를 빌릴 자리가 없고, 1권만 빌리면 나머지 열은 NULL로 비어 있다.
+  - 셀 안의 값 하나하나에는 FK나 UNIQUE 같은 제약을 걸 수 없다.
+  → 한 셀에는 값 하나만 두고, 여러 개가 되는 값은 행으로 나눠 따로 저장한다.
+```
+
+내 서비스에서 비슷한 위험이 있는 예:
+
+```text
+내 카페 방문 기록에서 visits에 menus = '아메리카노, 치즈케이크'처럼 주문 메뉴를 한 칸에 넣는 경우.
+메뉴마다 가격(price)과 메모가 따로 있어야 하고(P05-R08), '아메리카노를 마신 방문'을 찾기도 어렵다.
+그래서 Chapter 05에서 visit_items로 나눠 '한 방문에서 주문한 메뉴 한 개'를 한 행으로 저장했다.
+```
+
+## 3-2. 제2정규형(2NF)
+
+다음 관계를 설명합니다.
+
+```text
+(student_id, course_id) → grade
+student_id → student_name
+course_id → course_name
+```
+
+```text
+복합키 전체가 아니라 일부에만 의존하는 열을 분리해야 하는 이유:
+  grade는 (학생, 과목) 둘 다 알아야 정해지지만, student_name은 학생만, course_name은 과목만 알면 정해진다.
+  한 테이블에 두면 같은 학생 이름이 수강 과목 수만큼 반복되고, 이름이 바뀌면 여러 행을 고쳐야 한다(수정 이상).
+  또 수강 신청이 없는 과목은 course_name을 저장할 수 없다(삽입 이상).
+  → students(student_id, student_name), courses(course_id, course_name), enrollments(student_id, course_id, grade)로 나눈다.
+```
+
+## 3-3. 제3정규형(3NF)
+
+```text
+member_id → zip_code
+zip_code → city
+```
+
+```text
+일반 열이 다른 일반 열을 결정하는 구조를 검토해야 하는 이유:
+  city는 회원이 아니라 zip_code가 정한다. members에 city를 두면 같은 우편번호의 city가 회원 수만큼 반복된다.
+  행정구역이 바뀌어 city가 달라지면 그 우편번호를 가진 모든 회원 행을 고쳐야 하고,
+  일부만 고치면 같은 zip_code인데 city가 다른 모순이 생긴다.
+  → zip_codes(zip_code, city)를 따로 두고 members에는 zip_code만 남긴다.
+```
+
+### 정규화는 값이 반복되기만 하면 무조건 분리하는 것인가요?
+
+```text
+아니다. loans_nf.member_id = 101처럼 FK가 반복되는 것은 사건이 여러 번 일어났다는 뜻이고,
+사건 당시 가격처럼 그 순간의 사실을 남기는 이력값도 반복되어야 맞다.
+분리할지는 '이 값이 어떤 사실이고, 그 사실의 주인이 누구인가'로 판단한다.
+한 사실이 여러 곳에 복사되어 따로 바뀔 수 있을 때만 위험한 중복이다.
+```
+
+---
+
+# 4. 각 열의 '사실의 주인' 찾기
+
+| 열 | 어떤 사실을 설명하는가 | 주인 테이블 | 이유 |
+| --- | --- | --- | --- |
+| `member_name` | 회원의 이름 | `members_nf` (`name`) | 회원 한 명의 현재 사실이다. 대여할 때마다 바뀌지 않는다. |
+| `member_email` | 회원의 연락 이메일 | `members_nf` (`email`) | 회원의 현재 사실이다. 바뀌면 한 곳만 고쳐야 한다. |
+| `book_title` | 도서의 제목 | `books_nf` (`title`) | 도서 항목의 사실이다. 누가 빌리든 같다. |
+| `author` | 도서의 저자 | `books_nf` | 도서 항목의 사실이다. 대여와 상관없다. |
+| `borrowed_at` | 이번 대여가 시작된 날 | `loans_nf` | 대여 사건마다 다르다. 회원이나 도서만으로 정해지지 않는다. |
+| `due_at` | 이번 대여의 반납 예정일 | `loans_nf` | 대여 사건마다 정해지는 값이다. |
+| `returned_at` | 이번 대여의 실제 반납일 (NULL = 미반납) | `loans_nf` | 대여 사건의 상태다. 같은 책도 대여마다 반납일이 다르다. |
+| `member_id` | 이 대여를 한 회원이 누구인가 | `loans_nf` (FK → `members_nf.id`) | 회원 정보 자체가 아니라 사건이 어느 회원을 가리키는지 나타내는 연결값이다. |
+| `book_id` | 이 대여의 대상 도서가 무엇인가 | `loans_nf` (FK → `books_nf.id`) | 도서 정보 자체가 아니라 사건이 어느 도서를 가리키는지 나타내는 연결값이다. |
+
+정규화 후 한 행의 의미:
+
+```text
+members_nf 한 행 = 회원 한 명
+books_nf 한 행 = 이 장에서 대여 대상으로 취급하는 도서 항목 한 건
+loans_nf 한 행 = 특정 회원이 특정 도서를 대여한 사건 한 건
+```
+
+### 현재 사실과 사건 당시 이력을 구분하는 기준
+
+```text
+'값이 바뀌면 과거 기록도 같이 바뀌어야 하는가?'로 구분한다.
+- 같이 바뀌어야 하면 현재 사실이다. (예: 회원 이메일, 도서 제목) → 주인 테이블에 한 번만 저장한다.
+- 그때 값 그대로 남아야 하면 사건 당시 이력이다. (예: 대여일, 카페 방문 때 낸 가격 visit_items.price)
+  → 사건 테이블에 사건마다 저장한다. 반복되어도 위험한 중복이 아니다.
+```
+
+---
+
+# 5. PostgreSQL로 정규화 전·후 구조 재현
+
+Public 저장소의 다음 파일을 순서대로 사용합니다.
+
+```text
+code/chapter06/01_normalization_schema.sql
+code/chapter06/02_normalization_seed.sql
+code/chapter06/03_normalization_compare.sql
+```
+
+## 5-1. `01_normalization_schema.sql`
+
+실행 전 예상:
+
+```text
+생성될 테이블 수: 4개 (library_records_raw, members_nf, books_nf, loans_nf)
+각 테이블 예상 행 수: 모두 0행 (구조만 만들고 데이터는 02에서 넣는다)
+```
+
+실행 후:
+
+```text
+실제로 생성된 테이블: library_records_raw, members_nf, books_nf, loans_nf (to_regclass 결과 4개 모두 이름이 나옴)
+각 테이블 실제 행 수: 모두 0행
+  (COMMIT 전 검증 블록이 네 테이블의 행 수가 0이 아니면 '생성 검증 실패'로 멈추는데,
+   오류 없이 COMMIT까지 실행되고 마지막 SELECT 결과가 나왔다.)
+```
+
+## 5-2. `02_normalization_seed.sql`
+
+실행 전 예상 기준:
+
+```text
+raw = 3
+members = 2
+books = 2
+loans = 3
+미반납 = 2
+회원 101 대여 = 2
+도서 201 대여 = 2
+```
+
+실제 결과:
+
+```text
+raw: 3
+members: 2
+books: 2
+loans: 3
+미반납: 2
+회원 101 대여: 2
+도서 201 대여: 2
+(raw~loans는 마지막 SELECT 결과로 확인했다.
+ 미반납·회원 101·도서 201은 COMMIT 전 검증 블록이 2가 아니면 '입력 검증 실패'로 멈추는데,
+ 오류 없이 COMMIT까지 실행되었으므로 모두 2이다.)
+```
+
+예상과 다른 값이 있다면 이유:
+
+```text
+없다. 모든 값이 예상과 같았다.
+raw는 3행인데 members는 2행이다. raw에서는 김민지가 두 행에 반복되지만, 정규화 후에는 회원 한 명이 한 행이기 때문이다.
+books도 '데이터베이스 입문'이 raw에서 두 번 나오지만 books_nf에는 한 행이다.
+```
+
+## 5-3. `03_normalization_compare.sql`
+
+```text
+검증 메시지: Chapter 06 normalization comparison passed (Output 탭)
+PASS / FAIL: PASS
+```
+
+다음 항목을 확인합니다.
+
+```text
+회원 고아 참조: 0
+도서 고아 참조: 0
+날짜 순서 오류: 0
+활성 대여 중복: 0
+(스크립트가 네 값 중 하나라도 0이 아니면 RAISE EXCEPTION으로 멈추고, 모두 0일 때만 passed 메시지를 출력한다.
+ 미반납 대여 조회 결과도 1002(회원 101·도서 202), 1003(회원 102·도서 201) 2건으로, 도서마다 미반납이 1건씩뿐이다.)
+```
+
+### 정규화 후에도 JOIN으로 원래 업무 정보를 다시 볼 수 있는 이유
+
+```text
+loans_nf에 member_id, book_id가 남아 있어서 대여 한 건이 어느 회원·어느 도서인지 연결이 끊기지 않았기 때문이다.
+loans_nf.member_id = members_nf.id, loans_nf.book_id = books_nf.id로 JOIN하면
+raw처럼 '대여 + 회원 이름·이메일 + 도서 제목·저자'를 한 줄로 다시 볼 수 있다.
+정규화는 정보를 버리는 것이 아니라, 사실을 주인 테이블에 한 번씩만 두고 키로 이어 두는 것이다.
+```
+
+### 증거 화면
+
+권장 경로:
+
+```text
+assignments/chapter06/images/step05_normalization.png
+```
+
+![정규화 비교 검증 결과](./images/step05_normalization.png)
+
+> `03_normalization_compare.sql` 실행 결과. 오른쪽 Output에 `Chapter 06 normalization comparison passed`, 아래 결과 탭은 미반납 대여 2건이다.
+
+---
+
+# 6. Chapter 06에서 확정한 C-01~C-08 정책 해석
+
+| ID | 확정 규칙 | 구현 방법 | 왜 필요한가 | Chapter 05에서는 왜 미확정이었나 |
+| --- | --- | --- | --- | --- |
+| C-01 | 이메일 문자열 중복 금지 | `UNIQUE` | 같은 이메일로 회원이 두 번 가입하면 어느 행이 진짜 회원인지 알 수 없고, 연락도 엉킨다. | 가족이 이메일 하나를 같이 쓰는 경우를 허용할지, 대소문자를 같은 값으로 볼지 정해지지 않았다. |
+| C-02 | ISBN 필수·중복 금지 | `NOT NULL + UNIQUE` | ISBN으로 도서를 찾고 구분하려면 모든 도서에 있어야 하고 하나뿐이어야 한다. | ISBN이 없는 오래된 책을 받을지, 같은 책 여러 권(복본)을 따로 등록할지 미확정이었다. |
+| C-03 | 이름·제목 공백 금지 | `CHECK` | `NOT NULL`은 `''`, `'   '` 같은 빈 문자열을 막지 못한다. 이름 없는 회원·제목 없는 책을 막는다. | 공백만 있는 값을 '값 없음'으로 볼지에 대한 규칙이 없었다. |
+| C-04 | `due_at >= borrowed_at` | `CHECK` | 빌리기 전에 반납 예정일이 오는 대여는 말이 안 된다. 같은 날 반납 예정은 허용한다. | 대여 기간 정책(당일 대여 허용 여부 등)이 정해지지 않았다. |
+| C-05 | `returned_at`은 NULL 또는 대여일 이상 | `CHECK` | NULL은 미반납이라는 의미라 허용하고, 값이 있으면 빌린 날 이후여야 한다. | 미반납을 NULL로 표현한다는 것만 정했고, 날짜 순서 검사는 Ch06으로 미뤘다. |
+| C-06 | 존재하는 회원·도서만 참조 | `FOREIGN KEY` | 없는 회원·도서를 가리키는 대여(고아 참조)를 막는다. | Ch05 `loans`에는 이미 FK가 있었다. Ch06 실습 테이블(`loans_nf`)은 01에서 FK 없이 만들었기 때문에 기존 데이터 검사 후 추가한다. |
+| C-07 | 대여 이력이 있는 부모 삭제 금지 | `ON DELETE RESTRICT` | 회원이나 도서를 지우면 대여 이력이 고아가 되거나(SET NULL) 같이 사라진다(CASCADE). 이력을 보호한다. | 탈퇴 회원·폐기 도서를 어떻게 처리할지(삭제/보관) 정해지지 않았다. |
+| C-08 | 도서당 미반납 대여 최대 한 건 | 부분 고유 인덱스 | 한 권의 책을 동시에 두 사람이 빌린 상태가 될 수 없다. 반납된 과거 대여는 여러 건이어도 된다. | 같은 ISBN 복본을 한 행으로 볼지 미확정이라, 동시 대여를 막으면 복본 대여까지 막힐 수 있었다. |
+
+### 확정되지 않은 정책을 제약조건으로 먼저 만들면 위험한 이유
+
+```text
+제약조건은 DB가 무조건 지키게 하는 규칙이라, 나중에 정책이 반대로 정해지면 정상 데이터가 오류로 막힌다.
+예를 들어 복본 정책이 정해지기 전에 ISBN UNIQUE를 걸면 같은 책 두 권을 등록할 수 없다.
+또 이미 데이터가 쌓인 뒤에 제약을 빼거나 바꾸려면 기존 데이터를 다시 검사하고 고쳐야 해서 비용이 크다.
+그래서 확정된 규칙만 제약으로 만들고, 미확정은 '확인 필요'로 남긴다.
+```
+
+---
+
+# 7. 기존 데이터 검사 후 무결성 규칙 적용
+
+실행 파일:
+
+```text
+code/chapter06/04_add_integrity_rules.sql
+```
+
+## 7-1. 규칙을 추가하기 전에 기존 데이터를 먼저 검사해야 하는 이유
+
+```text
+이미 규칙을 어기는 데이터(NULL, 중복 이메일, 날짜 순서 오류, 고아 참조 등)가 있으면 ALTER TABLE이 실패한다.
+실패 원인을 오류 메시지로 하나씩 찾는 것보다, 먼저 검사해서 어떤 행이 문제인지 알고 정리한 뒤 규칙을 거는 것이 안전하다.
+04 파일은 검사와 규칙 추가를 한 트랜잭션으로 묶어서, 중간에 하나라도 실패하면 규칙이 일부만 걸린 상태로 남지 않게 한다.
+```
+
+## 7-2. 실행 결과
+
+```text
+명명된 제약조건 개수: 8개
+  members_nf: uq_members_nf_email(u), chk_members_nf_name_not_blank(c)
+  books_nf:   uq_books_nf_isbn(u), chk_books_nf_title_not_blank(c)
+  loans_nf:   fk_loans_nf_member(f), fk_loans_nf_book(f), chk_loans_nf_due_date(c), chk_loans_nf_returned_date(c)
+  (u = UNIQUE, c = CHECK, f = FOREIGN KEY)
+NOT NULL 적용 열 개수: 10개 (members 3 + books 3 + loans 4)
+  COMMIT 전 검증 블록이 10이 아니면 '규칙 적용 검증 실패'로 멈추는데 통과했다.
+부분 고유 인덱스 존재 여부: 있음 (active_loan_unique_index = uq_loans_nf_active_book)
+COMMIT 성공 여부: 성공 (COMMIT 뒤의 확인 SELECT 두 개가 결과를 보여 줌)
+```
+
+### 메타데이터를 확인하는 이유
+
+```text
+ALTER TABLE이 오류 없이 끝났다고 해서 의도한 규칙이 의도한 테이블에 걸렸다고 확신할 수 없다.
+pg_constraint, pg_attribute 같은 시스템 카탈로그를 조회하면 실제로 DB에 저장된 규칙 이름·종류·대상 테이블을 직접 확인할 수 있다.
+같은 이름의 제약이 다른 테이블에 있을 수도 있어서 conrelid(대상 테이블)까지 같이 확인한다.
+```
+
+### 증거 화면
+
+권장 경로:
+
+```text
+assignments/chapter06/images/step07_constraints.png
+```
+
+![제약조건 적용 확인](./images/step07_constraints.png)
+
+> `04_add_integrity_rules.sql` 실행 후 `pg_constraint` 조회 결과 8행. 부분 고유 인덱스 `uq_loans_nf_active_book`도 `to_regclass`로 존재를 확인했다.
+
+---
+
+# 8. 정상·경계·실패 테스트
+
+실행 파일:
+
+```text
+code/chapter06/05_integrity_tests.sql
+```
+
+> **중요:** 오류 테스트는 한 번에 하나씩 실행하고, 각 테스트가 끝난 뒤 기준 데이터가 유지되는지 확인합니다.
+
+## 8-1. 허용되어야 하는 경계값
+
+최소 3개를 실행·관찰합니다.
+
+| 테스트 | 예상 | 실제 | 왜 허용되어야 하는가 |
+| --- | --- | --- | --- |
+| `due_at = borrowed_at` | 성공 | 성공 (경계 A) | 당일 반납 예정도 정상 대여다. 규칙은 `>=`라서 같은 날은 허용된다. |
+| `returned_at = borrowed_at` | 성공 | 성공 (경계 A) | 빌린 날 바로 반납하는 것은 실제로 있을 수 있는 정상 사건이다. |
+| `returned_at = NULL` | 성공 | 성공 (경계 D) | NULL은 아직 반납하지 않았다는 뜻이다. 미반납 대여를 저장할 수 있어야 한다. |
+| `published_year = NULL` | 성공 | 성공 (경계 B) | 출판연도는 필수 규칙이 아니다. 연도를 모르는 책도 등록할 수 있어야 한다. |
+| 공백이 아닌 한 글자 이름 | 성공 | 성공 (경계 C) | '김'처럼 짧아도 실제 값이다. CHECK는 공백만 있는 값만 막아야 한다. |
+
+## 8-2. 실패해야 하는 오류값
+
+최소 6개를 실행합니다.
+
+> 처음에는 `05_integrity_tests.sql`의 테스트를 주석을 풀어 ⌘+Enter로 하나씩 실행했다(`code/chapter06/my_05_tests_one_by_one.sql`).
+> 오류 메시지를 한 번에 기록하기 위해 같은 테스트를 각각 `BEGIN ... EXCEPTION` 블록으로 따로 실행하고 SQLSTATE·제약조건 이름·메시지를 표로 모으는 `code/chapter06/my_05_test_report.sql`로 다시 실행했다. 아래 표는 그 결과다. (16개 테스트 모두 예상 = 실제)
+>
+> 오류 10은 SQLSTATE가 `23503`(foreign_key_violation)이 아니라 `23001`(restrict_violation)로 나왔다. `ON DELETE RESTRICT`로 만든 FK라서 PostgreSQL이 'RESTRICT 설정 위반'으로 따로 구분해 알려 준 것이다.
+
+| 오류 테스트 | 기대 규칙 | 실제 결과 | 오류 메시지 핵심 | 실패해야 하는 이유 |
+| --- | --- | --- | --- | --- |
+| 필수값 NULL | `NOT NULL` | 실패 (23502) | `null value in column "name" of relation "members_nf" violates not-null constraint` | 이름이 없는 회원은 누구인지 알 수 없다. |
+| ISBN NULL | `NOT NULL` | 실패 (23502) | `null value in column "isbn" of relation "books_nf" violates not-null constraint` | C-02에서 ISBN을 필수로 확정했다. |
+| 이메일 중복 | `UNIQUE` | 실패 (23505) | `duplicate key value violates unique constraint "uq_members_nf_email"` | junho@example.com은 이미 회원 102의 이메일이다. (C-01) |
+| ISBN 중복 | `UNIQUE` | 실패 (23505) | `duplicate key value violates unique constraint "uq_books_nf_isbn"` | ISBN-001은 이미 도서 201의 ISBN이다. (C-02) |
+| 공백 이름/제목 | `CHECK` | 실패 (23514) ×2 | `violates check constraint "chk_members_nf_name_not_blank"` / `"chk_books_nf_title_not_blank"` | `'   '`는 NULL은 아니지만 실제로는 값이 없는 것이다. (C-03) |
+| 존재하지 않는 회원 | `FOREIGN KEY` | 실패 (23503) | `insert or update on table "loans_nf" violates foreign key constraint "fk_loans_nf_member"` | 회원 999가 없으므로 고아 대여가 된다. (C-06) |
+| 존재하지 않는 도서 | `FOREIGN KEY` | 실패 (23503) | `insert or update on table "loans_nf" violates foreign key constraint "fk_loans_nf_book"` | 도서 999가 없으므로 고아 대여가 된다. (C-06) |
+| 날짜 순서 위반 | `CHECK` | 실패 (23514) ×2 | `violates check constraint "chk_loans_nf_due_date"` / `"chk_loans_nf_returned_date"` | 반납 예정일·실제 반납일이 대여일(4/20)보다 앞선다. (C-04, C-05) |
+| 두 번째 미반납 대여 | 부분 고유 인덱스 | 실패 (23505) | `duplicate key value violates unique constraint "uq_loans_nf_active_book"` / `Key (book_id)=(201) already exists.` | 도서 201은 대여 1003이 아직 반납되지 않았다. 한 권을 동시에 두 사람이 빌린 상태가 되면 안 된다. |
+| 참조 중 부모 삭제 | `RESTRICT/FK` | 실패 (23001) | `update or delete on table "members_nf" violates RESTRICT setting of foreign key constraint "fk_loans_nf_member" on table "loans_nf"` | 회원 101은 대여 이력 2건이 있다. 지우면 이력이 고아가 된다. (C-07) |
+
+## 8-3. 테스트 후 기준 상태 재검증
+
+```text
+raw: 3
+members: 2
+books: 2
+loans: 3
+미반납: 2
+회원 고아 참조: 0
+도서 고아 참조: 0
+활성 대여 중복: 0
+→ 테스트 전 기준 상태와 같다. 실패 테스트는 한 행도 저장하지 않았고, 경계 테스트 임시 행도 모두 지워졌다.
+
+(처음 확인했을 때는 books가 3이었다. 문장을 하나씩 실행하다가 경계 A의 테스트 도서 1800을 넣고
+ DELETE를 빠뜨린 것이 원인이었다. DELETE FROM public.books_nf WHERE id = 1800;으로 지운 뒤 다시 확인해 2가 되었다.
+ 기준 상태를 재검증하지 않았다면 이 남은 행을 모르고 넘어갔을 것이다.)
+```
+
+### 실패 테스트 후 기준 데이터가 유지되어야 하는 이유
+
+```text
+제약조건이 막았다는 것은 잘못된 행이 '한 줄도' 들어가지 않았다는 뜻이어야 한다.
+테스트 후 행 수가 그대로여야 오류 문장이 일부라도 저장되지 않았고, 다음 테스트도 같은 출발점에서 할 수 있다.
+만약 행 수가 바뀌었다면 막혀야 할 데이터가 들어갔거나 경계 테스트 임시 행을 지우지 않은 것이므로 원인을 찾아야 한다.
+```
+
+### 증거 화면
+
+권장 경로:
+
+```text
+assignments/chapter06/images/step08_integrity_error.png
+```
+
+![오류 9 부분 고유 인덱스 위반](./images/step08_integrity_error.png)
+
+> 오류 9: 미반납 대여가 있는 도서 201에 두 번째 미반납 대여를 넣자 `uq_loans_nf_active_book` 위반(23505)으로 막혔다.
+
+---
+
+# 9. 정규화와 무결성 제약조건 역할 비교
+
+| 질문 | 나의 설명 |
+| --- | --- |
+| 정규화가 해결하는 문제 | 같은 사실이 여러 행·테이블에 복사되어 생기는 삽입·수정·삭제 이상. 사실마다 주인 테이블을 정해 한 곳에만 저장한다. |
+| `NOT NULL`이 해결하는 문제 | 꼭 있어야 하는 값(이름, ISBN, 대여일 등)이 비어 있는 행. |
+| `UNIQUE`가 해결하는 문제 | 하나만 있어야 하는 값(이메일, ISBN)이 두 행에 들어가는 것. |
+| `CHECK`가 해결하는 문제 | 한 행 안에서 말이 안 되는 값(공백 이름, 대여일보다 앞선 반납일). |
+| `FOREIGN KEY`가 해결하는 문제 | 없는 회원·도서를 가리키는 대여(고아 참조)와, 참조 중인 부모를 지우는 것. |
+| 부분 고유 인덱스가 해결하는 문제 | 특정 조건의 행끼리만 중복을 막는 것. 반납된 대여는 여러 건이어도 되지만 미반납 대여는 도서당 한 건만 허용한다. |
+
+### 정규화만 잘하면 잘못된 데이터가 모두 차단되나요?
+
+```text
+아니다. 정규화는 '어디에 저장할지'를 정할 뿐, 들어오는 값이 맞는지는 검사하지 않는다.
+loans_nf로 잘 나눠도 제약이 없으면 반납일이 대여일보다 앞서거나 없는 회원 999를 가리키는 대여가 그대로 들어간다.
+실제로 01에서 만든 정규화 테이블에는 처음에 제약이 없어서, 04에서 규칙을 따로 추가해야 했다.
+```
+
+### 제약조건만 많이 넣으면 나쁜 구조가 좋은 구조가 되나요?
+
+```text
+아니다. library_records_raw에 제약을 아무리 걸어도 회원 이메일이 대여 행마다 복사되는 구조는 그대로라서 수정 이상은 남는다.
+오히려 raw에 member_email UNIQUE를 걸면 같은 회원이 두 번째로 빌리는 정상 대여까지 막힌다.
+구조(정규화)를 먼저 바로잡고, 그 위에 확정된 업무 규칙만 제약으로 거는 순서가 맞다.
+```
+
+---
+
+# 10. Chapter 05 개인 ERD 개선
+
+Chapter 05에서 만든 개인 서비스 ERD를 다시 엽니다.
+
+## 10-1. 수정 전 점검
+
+대상: Chapter 05 개인 서비스 **내 카페 방문 기록** (`cafes`, `menu_items`, `visits`, `visit_items`)
+
+- [x] 같은 현재 사실을 여러 테이블에 복사한 부분이 있는가? → 없음. 카페 이름·주소는 `cafes`에만, 메뉴 이름·분류는 `menu_items`에만 있다.
+- [x] 한 셀에 여러 독립 값을 넣으려 한 부분이 있는가? → 없음. 한 방문의 메뉴 여러 개는 Ch05에서 이미 `visit_items` 행으로 나눴다.
+- [x] 사건과 현재 상태가 한 테이블에 섞였는가? → 없음. `visit_items.price`는 '그때의 가격'(사건 당시 이력)이라 사건 테이블에 두는 것이 맞다.
+- [x] 복합키 일부에만 의존하는 속성이 있는가? → 없음. 모든 테이블이 단일 `id` PK라 부분 의존이 생기지 않는다.
+- [x] 일반 열이 다른 일반 열을 결정하는 부분이 있는가? → 없음. (`naver_place_id`는 일반 열이 아니라 후보키라서 3NF 위반이 아니다.)
+- [x] 확정 업무 규칙인데 DB가 막지 못하는 부분이 있는가? → **있음.** 공백 카페·메뉴 이름, 음료·디저트 외 분류, 음수 가격이 저장된다. FK 삭제 규칙도 이름 없이 기본값으로만 있다.
+- [x] 아직 미확정인데 제약조건으로 너무 강하게 정한 부분이 있는가? → 없음. Ch05에서 평점 범위, 같은 날 재방문, 카페별 메뉴, 폐업 처리는 일부러 제약을 넣지 않았다.
+
+## 10-2. 수정 전·후 비교
+
+| 항목 | 수정 전 | 수정 후 | 변경 근거 | 관련 요구사항 ID |
+| --- | --- | --- | --- | --- |
+| `cafes.name`, `menu_items.name` | `NOT NULL`만 있음 → `'   '` 저장 가능 | `CHECK (btrim(name) <> '')` 추가 | 교재 C-03과 같은 이유. NULL이 아니어도 공백뿐이면 실제로는 이름이 없다. | P05-R01, P05-R05 |
+| `menu_items.category` | 아무 문자열이나 저장 가능 (`'커피'`, `'음료 '` 등) | `CHECK (category IN ('음료', '디저트'))` | 요구사항에서 메뉴 분류를 음료·디저트 두 가지로 정했다. 표기가 달라지면 분류별로 모아 볼 수 없다. | P05-R05 |
+| `visit_items.price` | 음수 가격 저장 가능 | `CHECK (price IS NULL OR price >= 0)` | 그때 낸 가격은 음수일 수 없다. 가격을 안 적은 경우(NULL)는 계속 허용한다. | P05-R08 |
+| FK 3개 (`visits.cafe_id`, `visit_items.visit_id`, `visit_items.menu_item_id`) | 이름 없는 FK, 삭제 규칙 기본값 | `fk_visits_cafe` 등 이름을 붙이고 `ON DELETE RESTRICT` 명시 | 방문·주문 기록이 있는 카페·메뉴를 지우면 이력이 사라지거나 고아가 된다. 폐업 처리(P05-Q01)가 정해질 때까지 가장 보수적인 '삭제 금지'를 명시한다. | P05-R03, P05-R04, P05-Q01 |
+| 테이블 구조 | 4개 테이블 | 그대로 유지 | 10-1 점검에서 1NF·2NF·3NF 위반이 없었다. 값이 반복된다는 이유만으로 테이블을 더 나누지 않았다. | - |
+
+## 10-3. 개인 프로젝트 무결성 규칙 후보
+
+| 규칙 ID | 업무 규칙 | 제약조건 후보 | 확정 / 미확정 | 근거 |
+| --- | --- | --- | --- | --- |
+| P06-C01 | 카페 이름·메뉴 이름은 공백일 수 없다 | `CHECK (btrim(name) <> '')` | 확정 | P05-R01, R05. 이름 없는 카페·메뉴는 기록으로 쓸 수 없다. |
+| P06-C02 | 메뉴 분류는 음료 또는 디저트다 | `CHECK (category IN ('음료', '디저트'))` | 확정 | P05-R05에 두 가지만 있다. (나중에 '푸드' 등이 생기면 CHECK를 바꿔야 한다.) |
+| P06-C03 | 주문 가격은 기록하지 않거나(NULL) 0원 이상이다 | `CHECK (price IS NULL OR price >= 0)` | 확정 | P05-R08. 가격은 '남길 수 있다'라서 NULL 허용, 음수는 말이 안 된다. |
+| P06-C04 | 방문·주문 기록이 있는 카페·방문·메뉴는 지울 수 없다 | `FOREIGN KEY ... ON DELETE RESTRICT` | 확정 | 기록 서비스라 이력 보호가 우선이다. CASCADE는 기록을 지워 버린다. 폐업 표시 방법(P05-Q01)은 별도로 확인 필요. |
+| P06-C05 | 평점(`rating`, `my_rating`)은 1~5점이다 | `CHECK (rating BETWEEN 1 AND 5)` | **미확정 (확인 필요)** | Ch05에서 범위와 단위(0.5점 단위?)를 정하지 않았다. 지금 걸면 4.5점 같은 값이 막힐 수 있다. |
+
+```text
+그 밖에 미확정이라 제약으로 만들지 않은 것:
+- 같은 날 같은 카페 재방문 → UNIQUE(cafe_id, visited_on) 없음 (P05-Q03)
+- 카페별 메뉴 여부 → menu_items.cafe_id 없음 (P05-Q02)
+- 한 방문에서 같은 메뉴를 두 번 기록 → UNIQUE(visit_id, menu_item_id) 없음 (아메리카노 두 잔을 한 줄로 쓸지 두 줄로 쓸지 정하지 않음)
+```
+
+> 확정 규칙 P06-C01~C04는 `code/chapter06/my_cafe_integrity_rules.sql`로 Ch05 카페 테이블에 추가했다. (교재 04처럼 기존 데이터를 먼저 검사한 뒤 한 트랜잭션으로 적용)
+
+실행 후 `pg_constraint` 확인 결과 (7행):
+
+```text
+table_name |constraint_name              |constraint_type|
+-----------+-----------------------------+---------------+
+cafes      |chk_cafes_name_not_blank     |c              |
+menu_items |chk_menu_items_category      |c              |
+menu_items |chk_menu_items_name_not_blank|c              |
+visit_items|chk_visit_items_price        |c              |
+visit_items|fk_visit_items_menu_item     |f              |
+visit_items|fk_visit_items_visit         |f              |
+visits     |fk_visits_cafe               |f              |
+```
+
+> 미확정 규칙은 `확인 필요`로 남겨도 됩니다. 억지로 제약조건을 만들지 않습니다.
+
+## 10-4. 수정한 ERD
+
+권장 이미지 경로:
+
+```text
+assignments/chapter06/images/step10_my_erd_after.png
+```
+
+![수정한 내 카페 방문 기록 ERD](./images/step10_my_erd_after.png)
+
+> P06-C01~C04를 적용한 뒤 DBeaver에서 `visit_items` → Diagram 탭을 열고 `cafes`를 끌어다 추가한 ERD입니다.
+> 테이블과 관계선은 Ch05와 같고(구조 변경 없음), FK는 이름 붙은 `fk_visits_cafe`, `fk_visit_items_visit`, `fk_visit_items_menu_item`(ON DELETE RESTRICT)으로 바뀌었습니다. CHECK 제약은 그림에 표시되지 않아 10-3의 `pg_constraint` 결과로 확인했습니다.
+
+---
+
+# 11. AI를 정규화·무결성 리뷰어로 활용
+
+## 11-1. 내가 먼저 작성한 구조와 규칙
+
+```text
+내 서비스: 내 카페 방문 기록 (방문한 카페, 그때 주문한 메뉴와 가격, 평점·한줄평을 기록)
+검토할 테이블: cafes, menu_items, visits, visit_items
+한 행의 의미:
+  cafes = 카페 한 곳 / menu_items = 메뉴 종류 한 개
+  visits = 카페를 방문한 사건 한 번 / visit_items = 한 방문에서 주문한 메뉴 한 개
+중복으로 의심되는 열:
+  visit_items.price (같은 아메리카노 가격이 방문마다 반복됨 → 그때의 가격이라 의미 있는 반복이라고 판단)
+  visits.cafe_id, visit_items.menu_item_id (FK 반복 → 사건이 여러 번이라는 뜻)
+확정 업무 규칙: P06-C01 이름 공백 금지, P06-C02 분류는 음료/디저트, P06-C03 가격 NULL 또는 0 이상, P06-C04 기록 있는 부모 삭제 금지
+미확정 정책: 평점 범위·단위, 같은 날 재방문(P05-Q03), 카페별 메뉴(P05-Q02), 폐업 카페 처리(P05-Q01), 한 방문에서 같은 메뉴 두 줄 기록
+```
+
+## 11-2. AI에게 전달한 핵심 프롬프트
+
+```text
+(사용 도구: Claude, 이 답안을 함께 작성한 대화와 별개의 새 Claude 대화)
+너는 데이터베이스 설계 리뷰어야. 설계자가 아니라 검토만 해 줘.
+서비스: 내 카페 방문 기록 (나 혼자 쓰는 기록)
+테이블과 한 행의 의미:
+- cafes(id, name, address, naver_place_id UNIQUE, my_rating) = 카페 한 곳
+- menu_items(id, name, category) = 메뉴 종류 한 개
+- visits(id, cafe_id FK, visited_on, rating, comment) = 카페 방문 한 번
+- visit_items(id, visit_id FK, menu_item_id FK, price, memo) = 한 방문에서 주문한 메뉴 한 개
+확정 규칙: 이름 공백 금지, category는 음료/디저트, price는 NULL 또는 0 이상, 기록 있는 부모는 ON DELETE RESTRICT
+미확정: 평점 범위, 같은 날 재방문, 카페별 메뉴, 폐업 처리, 한 방문에 같은 메뉴 두 줄
+1NF·2NF·3NF 위반, 위험한 중복, 빠진 제약조건을 지적해 줘.
+제안마다 근거를 붙이고, 미확정 정책을 확정된 것처럼 바꾸지 마.
+```
+
+AI 답변 요약: 1NF·2NF·3NF 위반은 형식상 없음. `cafes.my_rating`이 방문 평점에서 계산되는 값이면 파생 중복. `menu_items.name` UNIQUE 없음, `naver_place_id` NULL 허용 여부 확인 필요. 확정 규칙 4개를 CHECK·NOT NULL·RESTRICT로 추가하라고 제안. 미확정 5개는 제약 없이 선택지만 정리.
+
+## 11-3. AI 제안 검토
+
+| AI 제안 | 수용 / 수정 / 보류 / 거절 | 요구사항 근거 | 실제 검증 방법 | 나의 판단 |
+| --- | --- | --- | --- | --- |
+| ① 확정 규칙 4개가 스키마에 하나도 반영되지 않았으니 CHECK·RESTRICT를 추가하라 | 거절 (이미 반영) | P06-C01~C04 | 10-3의 `pg_constraint` 조회 결과 7행 | 프롬프트에 규칙을 글로만 적고 실제 제약 목록을 주지 않아서 AI가 '없다'고 판단했다. DB 메타데이터로 확인하니 이미 적용되어 있었다. AI의 '없다'는 말을 그대로 믿으면 안 되는 예다. |
+| ② 공백 검사는 `<> ''`로는 부족하니 `name ~ '\S'`를 써라 | 보류 | P06-C01 | 실제 CHECK는 `btrim(name) <> ''`라서 `'   '`는 이미 막힌다 (교재 8-2 오류 4와 같은 방식) | AI는 내 식을 `<> ''`로 잘못 짐작했다. 다만 btrim은 스페이스만 지워서 탭·줄바꿈만 있는 이름은 통과할 수 있다는 지적은 맞다. 앱에서 탭을 입력할 일이 거의 없어 지금은 그대로 두고, 필요하면 `'\S'`로 바꾼다. |
+| ③ `price`는 `CHECK (price >= 0)`만으로 NULL도 통과하니 충분하다 | 수용 (의미 같음) | P06-C03 | CHECK는 결과가 NULL이면 통과시킨다 | 내 식 `price IS NULL OR price >= 0`과 결과가 같다. 'NULL 허용'을 읽는 사람에게 분명히 보이도록 지금 식을 유지한다. |
+| ④ FK 기본값 NO ACTION이 아니라 `ON DELETE RESTRICT`를 명시하라 | 수용 (이미 반영) | P06-C04 | `fk_visits_cafe` 등 3개를 RESTRICT로 다시 만듦 | 교재 8-2 오류 10에서 RESTRICT 위반은 23001로 따로 구분되는 것도 확인했다. |
+| ⑤ `cafes.my_rating`이 방문 평점의 평균이면 파생 중복이니 없애라 | 거절 | P05-R01 ('전체 선호도') | 요구사항 원문 확인 | my_rating은 방문 평점의 평균이 아니라 카페 전체에 대한 내 선호도다(Ch05 R01). 계산값이 아니므로 위험한 중복이 아니다. AI도 '의미에 따라 다르다'고 했으므로 요구사항에 한 줄 더 명시한다. |
+| ⑥ `naver_place_id`를 NOT NULL로 할지 정하라 | 거절 | Ch05 13-1 ('네이버에 없는 카페는 NULL') | Ch05 DDL에서 NULL 허용 확인 | 네이버에 없는 카페도 기록하기로 이미 정했다. NOT NULL이면 그런 카페를 저장할 수 없다. |
+| ⑦ `menu_items.name`에 UNIQUE (또는 `UNIQUE(cafe_id, name)`) | 보류 | P05-Q02 (카페별 메뉴, 미확정) | - | 범위가 카페별 메뉴 정책에 달려 있다. AI도 미확정으로 넘겼다. 표기 흔들림('아이스 아메리카노'/'아이스아메리카노')은 입력할 때 주의한다. |
+| ⑧ 폐업 카페는 상태 컬럼(폐업일 등)으로 표시 | 보류 | P05-Q01 (미확정) | - | RESTRICT 때문에 카페를 지울 수 없으니 표시 방법이 필요해질 것이라는 지적은 맞다. 방법은 정책이 정해진 뒤 정한다. |
+
+특히 AI가 다음을 제안했다면 근거를 다시 확인합니다.
+
+```text
+UNIQUE
+NOT NULL
+CHECK
+ON DELETE CASCADE
+ON DELETE RESTRICT
+새로운 테이블 분리
+```
+
+### AI가 단순히 값이 반복된다는 이유만으로 분리를 제안한 부분이 있었나요?
+
+```text
+없었다. 오히려 visit_items.price는 '그 방문 때 낸 가격(스냅샷)'이라 중복이 아니라고 먼저 짚었다.
+my_rating도 '계산값이면 중복, 독립 판단이면 유지'로 의미에 따라 판단을 나눴다.
+다만 카페별 메뉴를 고르면 visit_items에 cafe_id를 '의도적으로 중복'해 복합 FK를 걸어야 한다고 했는데,
+이건 반복을 없애는 게 아니라 무결성을 위해 일부러 반복을 두는 경우라 흥미로웠다. (Q02가 정해질 때 다시 검토)
+```
+
+### AI가 미확정 정책을 확정 규칙처럼 만든 부분이 있었나요?
+
+```text
+없었다. 프롬프트에서 '미확정 정책을 확정된 것처럼 바꾸지 마'라고 적었더니,
+평점 범위·같은 날 재방문·카페별 메뉴·폐업·같은 메뉴 두 줄을 모두 '결정 전에는 추가하지 않음'으로 분류하고 선택지만 정리했다.
+Ch05에서 AI가 UNIQUE(cafe_id, visited_on)나 평점 CHECK를 바로 제안했던 것과 비교하면 프롬프트에 미확정 목록을 같이 주는 것이 효과가 있었다.
+대신 이번에는 '이미 적용된 제약을 없다고 판단'하는 반대 방향의 실수가 있었다(①). AI 리뷰는 실제 DB 메타데이터로 다시 확인해야 한다.
+```
+
+---
+
+# 12. 최종 성찰
+
+아래 문장은 본인의 말로 작성합니다.
+
+```text
+1. 정규화에서 가장 중요한 질문은
+   테이블 간 관계 이다.
+
+2. 위험한 중복과 의미 있는 반복의 차이는
+   바뀌면 고쳐야 하는지의 여부 이다.
+
+3. 정규화와 제약조건의 역할이 다른 이유는
+   정규화는 어디에 둘지, 제약조건은 무엇을 막을지에 집중하기 때문 이다.
+
+4. 실패해야 하는 SQL을 일부러 실행해 보는 이유는
+   오류가 실제로 막히는지 눈으로 확인해 보기 위함 이다.
+
+5. AI가 제안한 UNIQUE/CHECK/FK를 그대로 적용하면 안 되는 이유는
+   이미 있는 제약을 없다고 하거나 결정과 반대되는 제안을 할 수 있기 때문 이다.
+```
+
+---
+
+# 13. 제출 체크리스트
+
+- [x] `chapter06_answer.md`를 본인 저장소에 만들었다.
+- [x] 위험한 중복과 의미 있는 반복을 구분했다.
+- [x] 삽입·수정·삭제 이상을 설명했다.
+- [x] 1NF·2NF·3NF 핵심 질문을 자신의 말로 설명했다.
+- [x] 열의 사실의 주인을 분류했다.
+- [x] `01_normalization_schema.sql`을 실행했다.
+- [x] `02_normalization_seed.sql` 기준 상태를 확인했다.
+- [x] `03_normalization_compare.sql` 검증 결과를 확인했다.
+- [x] C-01~C-08의 업무 근거를 설명했다.
+- [x] `04_add_integrity_rules.sql`로 규칙을 적용했다.
+- [x] 허용 경계값을 최소 3개 확인했다.
+- [x] 실패 테스트를 최소 6개 한 번에 하나씩 실행했다.
+- [x] 실패 후 기준 데이터가 유지되는지 확인했다.
+- [x] Chapter 05 개인 ERD를 수정했다.
+- [x] 개인 프로젝트 제약조건 후보를 확정/미확정으로 구분했다.
+- [x] AI 제안을 요구사항 근거와 실행 결과로 검토했다.
+- [x] 핵심 화면 3~4장만 첨부했다.
+- [x] 캡처에 비밀번호나 개인정보가 없다.
+- [x] GitHub에서 Markdown 이미지가 정상적으로 보인다.
+- [x] 최종 답안을 commit/push했다.
+
+---
+
+# 14. LMS 제출 URL
+
+아래 형식의 **본인 GitHub 파일 URL**을 LMS에 제출합니다.
+
+```text
+https://github.com/<본인-GitHub-ID>/<본인-저장소>/blob/main/assignments/chapter06/chapter06_answer.md
+```
+
+내 제출 URL:
+
+```text
+https://github.com/dusen120-ai/database/blob/main/assignments/chapter06/chapter06_answer.md
+```
+
+> 저장소 메인 URL, 교수자 템플릿 URL, Raw URL이 아니라 **작성 완료된 본인 `chapter06_answer.md` 파일 화면 URL**을 제출합니다.

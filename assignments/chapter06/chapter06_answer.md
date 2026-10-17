@@ -215,15 +215,17 @@ code/chapter06/03_normalization_compare.sql
 실행 전 예상:
 
 ```text
-생성될 테이블 수:
-각 테이블 예상 행 수:
+생성될 테이블 수: 4개 (library_records_raw, members_nf, books_nf, loans_nf)
+각 테이블 예상 행 수: 모두 0행 (구조만 만들고 데이터는 02에서 넣는다)
 ```
 
 실행 후:
 
 ```text
-실제로 생성된 테이블:
-각 테이블 실제 행 수:
+실제로 생성된 테이블: library_records_raw, members_nf, books_nf, loans_nf (to_regclass 결과 4개 모두 이름이 나옴)
+각 테이블 실제 행 수: 모두 0행
+  (COMMIT 전 검증 블록이 네 테이블의 행 수가 0이 아니면 '생성 검증 실패'로 멈추는데,
+   오류 없이 COMMIT까지 실행되고 마지막 SELECT 결과가 나왔다.)
 ```
 
 ## 5-2. `02_normalization_seed.sql`

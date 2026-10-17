@@ -341,22 +341,31 @@ code/chapter06/04_add_integrity_rules.sql
 ## 7-1. 규칙을 추가하기 전에 기존 데이터를 먼저 검사해야 하는 이유
 
 ```text
-
+이미 규칙을 어기는 데이터(NULL, 중복 이메일, 날짜 순서 오류, 고아 참조 등)가 있으면 ALTER TABLE이 실패한다.
+실패 원인을 오류 메시지로 하나씩 찾는 것보다, 먼저 검사해서 어떤 행이 문제인지 알고 정리한 뒤 규칙을 거는 것이 안전하다.
+04 파일은 검사와 규칙 추가를 한 트랜잭션으로 묶어서, 중간에 하나라도 실패하면 규칙이 일부만 걸린 상태로 남지 않게 한다.
 ```
 
 ## 7-2. 실행 결과
 
 ```text
-명명된 제약조건 개수:
-NOT NULL 적용 열 개수:
-부분 고유 인덱스 존재 여부:
-COMMIT 성공 여부:
+명명된 제약조건 개수: 8개
+  members_nf: uq_members_nf_email(u), chk_members_nf_name_not_blank(c)
+  books_nf:   uq_books_nf_isbn(u), chk_books_nf_title_not_blank(c)
+  loans_nf:   fk_loans_nf_member(f), fk_loans_nf_book(f), chk_loans_nf_due_date(c), chk_loans_nf_returned_date(c)
+  (u = UNIQUE, c = CHECK, f = FOREIGN KEY)
+NOT NULL 적용 열 개수: 10개 (members 3 + books 3 + loans 4)
+  COMMIT 전 검증 블록이 10이 아니면 '규칙 적용 검증 실패'로 멈추는데 통과했다.
+부분 고유 인덱스 존재 여부: 있음 (active_loan_unique_index = uq_loans_nf_active_book)
+COMMIT 성공 여부: 성공 (COMMIT 뒤의 확인 SELECT 두 개가 결과를 보여 줌)
 ```
 
 ### 메타데이터를 확인하는 이유
 
 ```text
-
+ALTER TABLE이 오류 없이 끝났다고 해서 의도한 규칙이 의도한 테이블에 걸렸다고 확신할 수 없다.
+pg_constraint, pg_attribute 같은 시스템 카탈로그를 조회하면 실제로 DB에 저장된 규칙 이름·종류·대상 테이블을 직접 확인할 수 있다.
+같은 이름의 제약이 다른 테이블에 있을 수도 있어서 conrelid(대상 테이블)까지 같이 확인한다.
 ```
 
 ### 증거 화면
@@ -367,7 +376,9 @@ COMMIT 성공 여부:
 assignments/chapter06/images/step07_constraints.png
 ```
 
-`여기에 제약조건/인덱스 적용 확인 화면을 삽입하세요.`
+![제약조건 적용 확인](./images/step07_constraints.png)
+
+> `04_add_integrity_rules.sql` 실행 후 `pg_constraint` 조회 결과 8행. 부분 고유 인덱스 `uq_loans_nf_active_book`도 `to_regclass`로 존재를 확인했다.
 
 ---
 

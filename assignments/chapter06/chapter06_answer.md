@@ -268,23 +268,28 @@ books도 '데이터베이스 입문'이 raw에서 두 번 나오지만 books_nf�
 ## 5-3. `03_normalization_compare.sql`
 
 ```text
-검증 메시지:
-PASS / FAIL:
+검증 메시지: Chapter 06 normalization comparison passed (Output 탭)
+PASS / FAIL: PASS
 ```
 
 다음 항목을 확인합니다.
 
 ```text
-회원 고아 참조:
-도서 고아 참조:
-날짜 순서 오류:
-활성 대여 중복:
+회원 고아 참조: 0
+도서 고아 참조: 0
+날짜 순서 오류: 0
+활성 대여 중복: 0
+(스크립트가 네 값 중 하나라도 0이 아니면 RAISE EXCEPTION으로 멈추고, 모두 0일 때만 passed 메시지를 출력한다.
+ 미반납 대여 조회 결과도 1002(회원 101·도서 202), 1003(회원 102·도서 201) 2건으로, 도서마다 미반납이 1건씩뿐이다.)
 ```
 
 ### 정규화 후에도 JOIN으로 원래 업무 정보를 다시 볼 수 있는 이유
 
 ```text
-
+loans_nf에 member_id, book_id가 남아 있어서 대여 한 건이 어느 회원·어느 도서인지 연결이 끊기지 않았기 때문이다.
+loans_nf.member_id = members_nf.id, loans_nf.book_id = books_nf.id로 JOIN하면
+raw처럼 '대여 + 회원 이름·이메일 + 도서 제목·저자'를 한 줄로 다시 볼 수 있다.
+정규화는 정보를 버리는 것이 아니라, 사실을 주인 테이블에 한 번씩만 두고 키로 이어 두는 것이다.
 ```
 
 ### 증거 화면
@@ -295,7 +300,9 @@ PASS / FAIL:
 assignments/chapter06/images/step05_normalization.png
 ```
 
-`여기에 정규화 전후 및 검증 결과 화면을 삽입하세요.`
+![정규화 비교 검증 결과](./images/step05_normalization.png)
+
+> `03_normalization_compare.sql` 실행 결과. 오른쪽 Output에 `Chapter 06 normalization comparison passed`, 아래 결과 탭은 미반납 대여 2건이다.
 
 ---
 

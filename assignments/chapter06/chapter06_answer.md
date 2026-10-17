@@ -32,16 +32,16 @@ SHOW transaction_read_only;
 
 | 확인 항목 | 실제 결과 | 의미 |
 | --- | --- | --- |
-| `current_database()` |  |  |
-| `current_user` |  |  |
-| `current_schema()` |  |  |
-| `search_path` |  |  |
-| `transaction_read_only` |  |  |
+| `current_database()` | `ai_database_book` | 실습용 DB에 연결되어 있다. |
+| `current_user` | `postgres` | 테이블을 만들고 제약조건을 추가할 사용자다. 01~05를 모두 같은 사용자로 실행한다. |
+| `current_schema()` | `public` | 이름만 쓴 테이블은 public에 만들어진다. (실습 SQL은 `public.`을 직접 붙여 쓴다.) |
+| `search_path` | `public, "$user"` | 테이블 이름을 찾는 순서다. public을 먼저 찾는다. |
+| `transaction_read_only` | `off` | 읽기 전용이 아니라서 테이블 생성·입력·변경이 가능하다. |
 
-- [ ] 현재 DB가 `ai_database_book`이다.
-- [ ] 변경 가능한 연결인지 확인했다.
-- [ ] Auto-commit 상태를 확인했다.
-- [ ] Chapter 06 번호형 SQL 파일을 사용한다.
+- [x] 현재 DB가 `ai_database_book`이다.
+- [x] 변경 가능한 연결인지 확인했다.
+- [x] Auto-commit 상태를 확인했다. (DBeaver 툴바 `Auto`, Commit/Rollback 버튼 비활성 → Auto-commit 켜짐)
+- [x] Chapter 06 번호형 SQL 파일을 사용한다. (`code/chapter06/01~05_*.sql`)
 
 ---
 
@@ -109,12 +109,18 @@ INSERT, UPDATE, DELETE 문장은 문법상 모두 정상적으로 실행된다.
 
 ```text
 한 셀에 쉼표로 여러 독립 값을 넣거나 book1/book2/book3처럼 반복 열을 만들면 왜 문제가 되는가:
+  - '데이터베이스 입문'을 빌린 회원 찾기처럼 값 하나를 검색·수정·삭제하기 어렵다. (문자열을 잘라서 비교해야 함)
+  - book1~book3처럼 열을 만들면 4권째를 빌릴 자리가 없고, 1권만 빌리면 나머지 열은 NULL로 비어 있다.
+  - 셀 안의 값 하나하나에는 FK나 UNIQUE 같은 제약을 걸 수 없다.
+  → 한 셀에는 값 하나만 두고, 여러 개가 되는 값은 행으로 나눠 따로 저장한다.
 ```
 
 내 서비스에서 비슷한 위험이 있는 예:
 
 ```text
-
+내 카페 방문 기록에서 visits에 menus = '아메리카노, 치즈케이크'처럼 주문 메뉴를 한 칸에 넣는 경우.
+메뉴마다 가격(price)과 메모가 따로 있어야 하고(P05-R08), '아메리카노를 마신 방문'을 찾기도 어렵다.
+그래서 Chapter 05에서 visit_items로 나눠 '한 방문에서 주문한 메뉴 한 개'를 한 행으로 저장했다.
 ```
 
 ## 3-2. 제2정규형(2NF)
@@ -129,6 +135,10 @@ course_id → course_name
 
 ```text
 복합키 전체가 아니라 일부에만 의존하는 열을 분리해야 하는 이유:
+  grade는 (학생, 과목) 둘 다 알아야 정해지지만, student_name은 학생만, course_name은 과목만 알면 정해진다.
+  한 테이블에 두면 같은 학생 이름이 수강 과목 수만큼 반복되고, 이름이 바뀌면 여러 행을 고쳐야 한다(수정 이상).
+  또 수강 신청이 없는 과목은 course_name을 저장할 수 없다(삽입 이상).
+  → students(student_id, student_name), courses(course_id, course_name), enrollments(student_id, course_id, grade)로 나눈다.
 ```
 
 ## 3-3. 제3정규형(3NF)
@@ -140,12 +150,19 @@ zip_code → city
 
 ```text
 일반 열이 다른 일반 열을 결정하는 구조를 검토해야 하는 이유:
+  city는 회원이 아니라 zip_code가 정한다. members에 city를 두면 같은 우편번호의 city가 회원 수만큼 반복된다.
+  행정구역이 바뀌어 city가 달라지면 그 우편번호를 가진 모든 회원 행을 고쳐야 하고,
+  일부만 고치면 같은 zip_code인데 city가 다른 모순이 생긴다.
+  → zip_codes(zip_code, city)를 따로 두고 members에는 zip_code만 남긴다.
 ```
 
 ### 정규화는 값이 반복되기만 하면 무조건 분리하는 것인가요?
 
 ```text
-
+아니다. loans_nf.member_id = 101처럼 FK가 반복되는 것은 사건이 여러 번 일어났다는 뜻이고,
+사건 당시 가격처럼 그 순간의 사실을 남기는 이력값도 반복되어야 맞다.
+분리할지는 '이 값이 어떤 사실이고, 그 사실의 주인이 누구인가'로 판단한다.
+한 사실이 여러 곳에 복사되어 따로 바뀔 수 있을 때만 위험한 중복이다.
 ```
 
 ---
@@ -154,28 +171,31 @@ zip_code → city
 
 | 열 | 어떤 사실을 설명하는가 | 주인 테이블 | 이유 |
 | --- | --- | --- | --- |
-| `member_name` |  |  |  |
-| `member_email` |  |  |  |
-| `book_title` |  |  |  |
-| `author` |  |  |  |
-| `borrowed_at` |  |  |  |
-| `due_at` |  |  |  |
-| `returned_at` |  |  |  |
-| `member_id` |  |  |  |
-| `book_id` |  |  |  |
+| `member_name` | 회원의 이름 | `members_nf` (`name`) | 회원 한 명의 현재 사실이다. 대여할 때마다 바뀌지 않는다. |
+| `member_email` | 회원의 연락 이메일 | `members_nf` (`email`) | 회원의 현재 사실이다. 바뀌면 한 곳만 고쳐야 한다. |
+| `book_title` | 도서의 제목 | `books_nf` (`title`) | 도서 항목의 사실이다. 누가 빌리든 같다. |
+| `author` | 도서의 저자 | `books_nf` | 도서 항목의 사실이다. 대여와 상관없다. |
+| `borrowed_at` | 이번 대여가 시작된 날 | `loans_nf` | 대여 사건마다 다르다. 회원이나 도서만으로 정해지지 않는다. |
+| `due_at` | 이번 대여의 반납 예정일 | `loans_nf` | 대여 사건마다 정해지는 값이다. |
+| `returned_at` | 이번 대여의 실제 반납일 (NULL = 미반납) | `loans_nf` | 대여 사건의 상태다. 같은 책도 대여마다 반납일이 다르다. |
+| `member_id` | 이 대여를 한 회원이 누구인가 | `loans_nf` (FK → `members_nf.id`) | 회원 정보 자체가 아니라 사건이 어느 회원을 가리키는지 나타내는 연결값이다. |
+| `book_id` | 이 대여의 대상 도서가 무엇인가 | `loans_nf` (FK → `books_nf.id`) | 도서 정보 자체가 아니라 사건이 어느 도서를 가리키는지 나타내는 연결값이다. |
 
 정규화 후 한 행의 의미:
 
 ```text
-members_nf 한 행 =
-books_nf 한 행 =
-loans_nf 한 행 =
+members_nf 한 행 = 회원 한 명
+books_nf 한 행 = 이 장에서 대여 대상으로 취급하는 도서 항목 한 건
+loans_nf 한 행 = 특정 회원이 특정 도서를 대여한 사건 한 건
 ```
 
 ### 현재 사실과 사건 당시 이력을 구분하는 기준
 
 ```text
-
+'값이 바뀌면 과거 기록도 같이 바뀌어야 하는가?'로 구분한다.
+- 같이 바뀌어야 하면 현재 사실이다. (예: 회원 이메일, 도서 제목) → 주인 테이블에 한 번만 저장한다.
+- 그때 값 그대로 남아야 하면 사건 당시 이력이다. (예: 대여일, 카페 방문 때 낸 가격 visit_items.price)
+  → 사건 테이블에 사건마다 저장한다. 반복되어도 위험한 중복이 아니다.
 ```
 
 ---

@@ -540,6 +540,20 @@ Chapter 05에서 만든 개인 서비스 ERD를 다시 엽니다.
 
 > 확정 규칙 P06-C01~C04는 `code/chapter06/my_cafe_integrity_rules.sql`로 Ch05 카페 테이블에 추가했다. (교재 04처럼 기존 데이터를 먼저 검사한 뒤 한 트랜잭션으로 적용)
 
+실행 후 `pg_constraint` 확인 결과 (7행):
+
+```text
+table_name |constraint_name              |constraint_type|
+-----------+-----------------------------+---------------+
+cafes      |chk_cafes_name_not_blank     |c              |
+menu_items |chk_menu_items_category      |c              |
+menu_items |chk_menu_items_name_not_blank|c              |
+visit_items|chk_visit_items_price        |c              |
+visit_items|fk_visit_items_menu_item     |f              |
+visit_items|fk_visit_items_visit         |f              |
+visits     |fk_visits_cafe               |f              |
+```
+
 > 미확정 규칙은 `확인 필요`로 남겨도 됩니다. 억지로 제약조건을 만들지 않습니다.
 
 ## 10-4. 수정한 ERD
@@ -559,12 +573,16 @@ assignments/chapter06/images/step10_my_erd_after.png
 ## 11-1. 내가 먼저 작성한 구조와 규칙
 
 ```text
-내 서비스:
-검토할 테이블:
+내 서비스: 내 카페 방문 기록 (방문한 카페, 그때 주문한 메뉴와 가격, 평점·한줄평을 기록)
+검토할 테이블: cafes, menu_items, visits, visit_items
 한 행의 의미:
+  cafes = 카페 한 곳 / menu_items = 메뉴 종류 한 개
+  visits = 카페를 방문한 사건 한 번 / visit_items = 한 방문에서 주문한 메뉴 한 개
 중복으로 의심되는 열:
-확정 업무 규칙:
-미확정 정책:
+  visit_items.price (같은 아메리카노 가격이 방문마다 반복됨 → 그때의 가격이라 의미 있는 반복이라고 판단)
+  visits.cafe_id, visit_items.menu_item_id (FK 반복 → 사건이 여러 번이라는 뜻)
+확정 업무 규칙: P06-C01 이름 공백 금지, P06-C02 분류는 음료/디저트, P06-C03 가격 NULL 또는 0 이상, P06-C04 기록 있는 부모 삭제 금지
+미확정 정책: 평점 범위·단위, 같은 날 재방문(P05-Q03), 카페별 메뉴(P05-Q02), 폐업 카페 처리(P05-Q01), 한 방문에서 같은 메뉴 두 줄 기록
 ```
 
 ## 11-2. AI에게 전달한 핵심 프롬프트

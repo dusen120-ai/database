@@ -564,7 +564,10 @@ visits     |fk_visits_cafe               |f              |
 assignments/chapter06/images/step10_my_erd_after.png
 ```
 
-`여기에 수정한 개인 ERD 이미지를 삽입하세요.`
+![수정한 내 카페 방문 기록 ERD](./images/step10_my_erd_after.png)
+
+> P06-C01~C04를 적용한 뒤 DBeaver에서 `visit_items` → Diagram 탭을 열고 `cafes`를 끌어다 추가한 ERD입니다.
+> 테이블과 관계선은 Ch05와 같고(구조 변경 없음), FK는 이름 붙은 `fk_visits_cafe`, `fk_visit_items_visit`, `fk_visit_items_menu_item`(ON DELETE RESTRICT)으로 바뀌었습니다. CHECK 제약은 그림에 표시되지 않아 10-3의 `pg_constraint` 결과로 확인했습니다.
 
 ---
 

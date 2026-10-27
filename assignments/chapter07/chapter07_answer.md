@@ -490,7 +490,7 @@ code/chapter07/05_course_project_integrity_tests.sql
 테스트 후 기준 상태 (리포트 파일 마지막 조회):
   students 3 / instructors 2 / courses 3 / enrollments 5
   total_recorded 590000 / non_cancelled_recorded 440000 / active_duplicate 0
-04 validation 재실행 결과: 
+04 validation 재실행 결과: Chapter 07 course project validation passed (테스트 후 다시 PASS)
 기준 데이터가 유지되었는가: 예. 테스트 전 최종 상태(8장)와 같다. 실패한 13개 테스트는 한 행도 저장하지 않았고,
                           경계 테스트의 임시 강의 1801·신청 1802도 삭제되어 남지 않았다.
 ```

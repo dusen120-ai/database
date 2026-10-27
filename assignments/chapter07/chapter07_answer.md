@@ -216,18 +216,20 @@ course_project 스키마 존재 여부: 실행 전에는 없음 → 실행 후 �
 ## 5-2. 실행 결과
 
 ```text
-실제 테이블 수:
-실제 명명 제약조건 수:
-실제 NOT NULL 열 수:
-부분 고유 인덱스:
-네 테이블의 실제 행 수:
-통과 메시지:
+실제 테이블 수: 4 (마지막 결과에 course_project.students / instructors / courses / enrollments가 모두 나옴)
+실제 명명 제약조건 수: 15 (파일 안 검증 블록이 15개가 아니면 RAISE EXCEPTION → 통과했으므로 15)
+실제 NOT NULL 열 수: 20 (같은 검증 블록에서 확인)
+부분 고유 인덱스: course_project.uq_course_enrollments_active (마지막 결과 active_index 열)
+네 테이블의 실제 행 수: 0 / 0 / 0 / 0 (같은 검증 블록에서 확인)
+통과 메시지: Chapter 07 course project schema creation passed (Output 탭)
 ```
 
 ### 예상과 실제 비교
 
 ```text
-
+예상과 모두 같다. 제약조건 수·NOT NULL 열 수·행 수는 화면에 숫자로 따로 나오지 않지만,
+01 파일의 마지막 DO 블록이 이 값들이 기준(15, 20, 0행)과 다르면 오류를 내고 COMMIT 전에 멈추도록 되어 있다.
+Output에 통과 메시지가 나왔다는 것은 이 검사들이 모두 통과했고 전체 생성이 COMMIT되었다는 뜻이다.
 ```
 
 ### 증거 화면
@@ -238,7 +240,9 @@ course_project 스키마 존재 여부: 실행 전에는 없음 → 실행 후 �
 assignments/chapter07/images/step05_schema.png
 ```
 
-`여기에 스키마/테이블 생성 검증 화면을 삽입하세요.`
+![스키마 생성 검증 결과](./images/step05_schema.png)
+
+> `01_course_project_schema.sql` 전체 실행(⌥X) 결과. 오른쪽 Output에 `Chapter 07 course project schema creation passed`, 아래 결과 탭은 `to_regclass`로 확인한 테이블 4개와 부분 고유 인덱스 1개다.
 
 ---
 

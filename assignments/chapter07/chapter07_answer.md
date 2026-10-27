@@ -41,7 +41,7 @@ SHOW transaction_read_only;
 - [x] 현재 DB가 `ai_database_book`이다.
 - [x] 쓰기 가능한 연결인지 확인했다. (`transaction_read_only = off`)
 - [x] 실행할 SQL 범위를 확인했다. (`code/chapter07/01~05_*.sql`, 01~03은 파일 전체 실행, 05는 한 구간씩)
-- [ ] Auto-commit 상태를 확인했다.
+- [x] Auto-commit 상태를 확인했다. (DBeaver 툴바 `Auto` → Auto-commit 켜짐. 01~03은 파일 안에서 BEGIN ... COMMIT으로 직접 묶는다.)
 
 ### 프로젝트 SQL을 실행하기 전에 시작 상태를 확인해야 하는 이유
 

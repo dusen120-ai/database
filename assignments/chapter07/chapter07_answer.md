@@ -515,7 +515,9 @@ code/chapter07/05_course_project_integrity_tests.sql
 assignments/chapter07/images/step09_integrity.png
 ```
 
-`여기에 대표 실패 테스트와 기준 상태 유지 결과를 삽입하세요.`
+![무결성 테스트 결과](./images/step09_integrity.png)
+
+> `my_05_test_report.sql` 실행 결과 `ch07_test_report` 탭. 경계 A는 성공, 오류 0~12는 모두 실패했고 SQLSTATE(23502·23505·23503·23514·23001)와 제약조건 이름이 기록되었다. 기준 상태 유지 결과는 9-4에 적었다.
 
 ---
 

@@ -32,21 +32,24 @@ SHOW transaction_read_only;
 
 | 확인 항목 | 실제 결과 | 의미 |
 | --- | --- | --- |
-| `current_database()` |  |  |
-| `current_user` |  |  |
-| `current_schema()` |  |  |
-| `search_path` |  |  |
-| `transaction_read_only` |  |  |
+| `current_database()` | `ai_database_book` | 교재 실습용 DB에 연결되어 있다. 모든 SQL 파일이 이 이름을 먼저 검사한다. |
+| `current_user` | `postgres` | 스키마를 만들 사용자다. 01에서 만든 역할과 같은 역할로 02~06·reset을 실행해야 한다. |
+| `current_schema()` | `public` | 기본 스키마는 public이지만, 프로젝트 SQL은 `course_project.students`처럼 스키마를 직접 붙이므로 상관없다. |
+| `search_path` | `public, "$user"` | 이름만 쓴 객체를 찾는 순서다. course_project는 들어 있지 않으므로 직접 조회할 때도 `course_project.`을 붙인다. |
+| `transaction_read_only` | `off` | 읽기 전용이 아니므로 스키마 생성·입력·변경이 가능하다. |
 
-- [ ] 현재 DB가 `ai_database_book`이다.
-- [ ] 쓰기 가능한 연결인지 확인했다.
-- [ ] 실행할 SQL 범위를 확인했다.
+- [x] 현재 DB가 `ai_database_book`이다.
+- [x] 쓰기 가능한 연결인지 확인했다. (`transaction_read_only = off`)
+- [x] 실행할 SQL 범위를 확인했다. (`code/chapter07/01~05_*.sql`, 01~03은 파일 전체 실행, 05는 한 구간씩)
 - [ ] Auto-commit 상태를 확인했다.
 
 ### 프로젝트 SQL을 실행하기 전에 시작 상태를 확인해야 하는 이유
 
 ```text
-
+DBeaver에는 연결이 여러 개 있을 수 있어서, 잘못된 DB나 읽기 전용 연결에서 실행하면 엉뚱한 곳에 스키마가 생기거나 중간에 실패한다.
+또 01~03은 '이 상태에서 시작한다'는 전제가 있다(01은 course_project가 없어야 하고, 02는 네 테이블이 비어 있어야 한다).
+시작 상태가 다르면 결과도 기준값과 달라지므로, 실행 전에 DB·사용자·쓰기 가능 여부를 확인하고
+파일 안의 사전 검사가 통과하는지 본 다음 실행한다.
 ```
 
 ---

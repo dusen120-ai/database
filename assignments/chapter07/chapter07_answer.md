@@ -487,9 +487,16 @@ code/chapter07/05_course_project_integrity_tests.sql
 ## 9-4. 실패 후 기준 상태 재검증
 
 ```text
-04 validation 재실행 결과:
-기준 데이터가 유지되었는가:
+테스트 후 기준 상태 (리포트 파일 마지막 조회):
+  students 3 / instructors 2 / courses 3 / enrollments 5
+  total_recorded 590000 / non_cancelled_recorded 440000 / active_duplicate 0
+04 validation 재실행 결과: 
+기준 데이터가 유지되었는가: 예. 테스트 전 최종 상태(8장)와 같다. 실패한 13개 테스트는 한 행도 저장하지 않았고,
+                          경계 테스트의 임시 강의 1801·신청 1802도 삭제되어 남지 않았다.
 ```
+
+> 리포트 파일 첫 실행 때 Output에 `table "ch07_test_report" does not exist, skipping`이 나왔다.
+> 맨 앞의 `DROP TABLE IF EXISTS`가 지울 임시 테이블이 아직 없어서 건너뛰었다는 안내(NOTICE)이고 오류가 아니다.
 
 ### 실패 테스트가 프로젝트 품질 검증에 필요한 이유
 

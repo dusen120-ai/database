@@ -683,6 +683,27 @@ assignments/chapter07/images/personal_project_erd.png
 
 > 구조는 `code/chapter07/my_cafe_project_schema.sql`로 별도 스키마 `cafe_project`에 만들었다. (Ch05~06의 `public` 카페 테이블은 그대로 둠)
 
+실행 후 `pg_constraint` 확인 결과 (12행):
+
+```text
+table_name              |constraint_name              |constraint_type|
+------------------------+-----------------------------+---------------+
+cafe_project.cafes      |chk_cafes_my_rating          |c              |
+cafe_project.cafes      |chk_cafes_name_not_blank     |c              |
+cafe_project.cafes      |uq_cafes_naver_place_id      |u              |
+cafe_project.menu_items |chk_menu_items_category      |c              |
+cafe_project.menu_items |chk_menu_items_name_not_blank|c              |
+cafe_project.menu_items |fk_menu_items_cafe           |f              |
+cafe_project.menu_items |uq_menu_items_cafe_name      |u              |
+cafe_project.visits     |chk_visits_rating            |c              |
+cafe_project.visits     |fk_visits_cafe               |f              |
+cafe_project.visit_items|chk_visit_items_price        |c              |
+cafe_project.visit_items|fk_visit_items_menu_item     |f              |
+cafe_project.visit_items|fk_visit_items_visit         |f              |
+```
+
+> Ch06(7행)보다 늘어난 것: `fk_menu_items_cafe`, `uq_menu_items_cafe_name`(MD01), `chk_cafes_my_rating`, `chk_visits_rating`(MD02). `uq_cafes_naver_place_id`는 Ch05의 이름 없는 UNIQUE에 이름을 붙인 것이다.
+
 ---
 
 # 13. 개인 프로젝트 완료 기준 만들기

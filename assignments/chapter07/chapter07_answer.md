@@ -666,7 +666,11 @@ P07-MQ04. 폐업한 카페(closed_on이 있는 카페)에 폐업일 이후 방�
 assignments/chapter07/images/personal_project_erd.png
 ```
 
-`여기에 본인의 ERD 이미지를 삽입하세요.`
+![내 카페 방문 기록 중간 프로젝트 ERD](./images/personal_project_erd.png)
+
+> `my_cafe_project_schema.sql` 실행 후 DBeaver에서 `cafe_project` → Tables → View Diagram으로 연 ERD.
+> 관계선 4개: `cafes` → `menu_items`(이번에 추가), `cafes` → `visits`, `visits` → `visit_items`, `menu_items` → `visit_items`. 검은 점이 FK를 가진 자식(N) 쪽이다.
+> `cafes.closed_on`이 새로 생겼다. CHECK·UNIQUE는 그림에 나오지 않아 아래 `pg_constraint` 결과로 확인했다.
 
 ### Chapter 05~06 ERD에서 이번에 바꾼 점
 
@@ -738,21 +742,45 @@ AI에게 프로젝트를 대신 완성시키지 않고 누락과 위험을 찾�
 ## 14-1. AI에게 전달한 핵심 자료
 
 ```text
-요구사항:
+요구사항: P07-MR01~MR10 (11-3 표)
 
-테이블/ERD 설명:
+테이블/ERD 설명: cafes / menu_items(cafe_id FK) / visits(cafe_id FK) / visit_items(visit_id, menu_item_id FK)와 각 한 행 의미, 제약조건 12개 (12장)
 
-프로젝트 결정:
+프로젝트 결정: P07-MD01 카페별 메뉴, MD02 평점 1~5, MD03 폐업은 closed_on, MD04 주문 가격 복사·보존 (11-4)
 
-미확정 질문:
+미확정 질문: P07-MQ01 같은 날 재방문, MQ02 같은 메뉴 두 잔, MQ03 my_rating 직접 입력 vs 평균, MQ04 폐업 후 방문 (11-5)
 
-완료 기준:
+완료 기준: 13장의 7개 기준
 ```
 
 ## 14-2. 내가 사용한 프롬프트
 
 ```text
+(사용 도구: Claude, 이 답안을 함께 작성한 대화와 별개의 새 Claude 대화)
+너는 데이터베이스 프로젝트 리뷰어야. 설계를 대신 완성하지 말고, 누락과 위험만 찾아 줘.
+서비스: 내 카페 방문 기록 (나 혼자 쓰는 기록, PostgreSQL)
 
+테이블 (한 행 의미):
+- cafes(id, name NOT NULL, address, naver_place_id UNIQUE, my_rating NUMERIC(2,1), closed_on DATE) = 카페 한 곳
+- menu_items(id, cafe_id FK NOT NULL, name, category) = 한 카페가 파는 메뉴 한 개, UNIQUE(cafe_id, name)
+- visits(id, cafe_id FK NOT NULL, visited_on NOT NULL, rating NUMERIC(2,1), comment) = 카페 방문 한 번
+- visit_items(id, visit_id FK, menu_item_id FK, price INTEGER, memo) = 한 방문에서 주문한 메뉴 한 개
+- 모든 FK는 ON DELETE RESTRICT
+- CHECK: 이름 공백 금지, category IN ('음료','디저트'), rating·my_rating BETWEEN 1 AND 5, price IS NULL OR price >= 0
+
+요구사항:
+MR01 카페 정보 관리 / MR02 방문 전 카페 등록 가능 / MR03 메뉴는 한 카페에 속함 / MR04 방문마다 방문일·평점·한줄평
+MR05 같은 카페 여러 번 방문 / MR06 한 방문에 여러 메뉴 / MR07 메뉴별 그때 가격·메모 (가격 생략 가능, 음수 불가)
+MR08 평점 1.0~5.0, NULL 허용 / MR09 폐업 카페는 삭제하지 않고 폐업일로 구분 / MR10 주문 메뉴는 그 방문의 카페 메뉴여야 함
+
+프로젝트 결정: MD01 카페별 메뉴, MD02 평점 1~5, MD03 폐업은 closed_on, MD04 주문 가격은 그때 값을 복사해 보존
+미확정 질문: MQ01 같은 날 같은 카페 재방문 허용?, MQ02 같은 메뉴 두 잔은 두 행 vs quantity?,
+            MQ03 my_rating 직접 입력 vs 방문 평점 평균?, MQ04 폐업일 이후 방문 기록을 막을까?
+완료 기준: 스키마 객체·제약조건 존재 / Seed 행 수 일치 / 고아 0 / MR10 위반 0 /
+          잘못된 값 거부·경계값 허용 / 기록 있는 카페 삭제 실패·closed_on으로 폐업 처리
+
+1) 요구사항이 테이블·제약조건에 빠진 곳, 2) 위험한 제약이나 빠진 제약, 3) 검증하기 어려운 완료 기준을 지적해 줘.
+제안마다 근거를 붙이고, 미확정 질문은 확정된 것처럼 바꾸지 말고 선택지만 정리해 줘.
 ```
 
 ## 14-3. AI 제안 검토

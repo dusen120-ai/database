@@ -376,22 +376,29 @@ code/chapter07/04_course_project_validation.sql
 ## 8-1. 최종 검증 결과
 
 ```text
-최종 행 수 students/instructors/courses/enrollments:
-서비스 JOIN 결과 행 수:
-학생 101 신청 수:
-강의 301 신청 수:
-강사 201 강의 수:
-고아 관계 수:
-활성 중복 신청 수:
-전체 recorded_amount:
-취소 제외 recorded_amount:
-통과 메시지:
+최종 행 수 students/instructors/courses/enrollments: 3 / 2 / 3 / 5
+서비스 JOIN 결과 행 수: 5
+학생 101 신청 수: 2
+강의 301 신청 수: 2
+강사 201 강의 수: 2
+고아 관계 수: 0 (학생 / 강의 / 강사 참조 모두 0)
+활성 중복 신청 수: 0
+전체 recorded_amount: 590000 (검산값 결과 total_recorded_amount)
+취소 제외 recorded_amount: 440000 (검산값 결과 non_cancelled_recorded_amount, 4건)
+통과 메시지: Chapter 07 course project validation passed (Output 탭)
 ```
+
+> 검산값 결과 `5 | 590000 | 4 | 440000`은 화면에서 직접 확인했다. 행 수·JOIN 행 수·관계 수·고아·활성 중복은 04의 검증 블록이
+> 기준값과 다르면 오류를 내도록 되어 있어 통과 메시지로 확인했다. 04는 조회만 하므로 몇 번을 실행해도 결과가 같다.
 
 ### SQL 파일 4개가 모두 실행되었다는 사실과 프로젝트 검증 PASS가 다른 이유
 
 ```text
-
+'실행되었다'는 SQL 문장이 오류 없이 끝났다는 뜻일 뿐, 데이터가 요구한 상태인지는 말해 주지 않는다.
+예를 들어 02를 두 번 실행하려 했거나 03의 UPDATE가 조건이 안 맞아 0행만 바뀌어도 '실행'은 된 것처럼 보일 수 있다.
+04는 구조(제약조건 15개, NOT NULL 20개), 관계(고아 0, JOIN 5행), 데이터(행 수, 상태, 금액 합계)를
+미리 정한 기준값과 하나하나 비교하고 하나라도 다르면 실패시킨다.
+그래서 PASS는 "파일을 다 돌렸다"가 아니라 "프로젝트가 정의한 완료 상태에 도달했다"는 증거가 된다.
 ```
 
 ### 증거 화면
@@ -402,7 +409,9 @@ code/chapter07/04_course_project_validation.sql
 assignments/chapter07/images/step08_validation.png
 ```
 
-`여기에 최종 validation PASS 화면을 삽입하세요.`
+![최종 validation PASS](./images/step08_validation.png)
+
+> `04_course_project_validation.sql` 전체 실행 결과. Output에 `Chapter 07 course project validation passed`, 아래 결과 탭은 마지막 검산값(전체 5건 / 590000, 취소 제외 4건 / 440000)이다.
 
 ---
 

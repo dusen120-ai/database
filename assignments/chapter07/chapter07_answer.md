@@ -283,7 +283,7 @@ recorded_amount 합계: 470000
 1001 상태: 수강중
 1004 상태: 신청
 1005 존재 여부: 없음 (0건)
-통과 메시지: 
+통과 메시지: Chapter 07 course project seed passed (Output 탭)
 ```
 
 > 행 수는 02 파일 마지막 결과, 나머지 값은 별도 확인 쿼리(`SUM`, `COUNT`, 상태 조회)를 실행해 얻었다. 6-1 예상과 모두 같다.
@@ -326,21 +326,29 @@ code/chapter07/03_course_project_changes.sql
 ## 7-2. 실제 결과
 
 ```text
-1001 상태 / recorded_amount:
-1004 상태 / recorded_amount:
-1005 상태 / recorded_amount:
-최종 enrollments 행 수:
-전체 recorded_amount 합계:
-취소 제외 건수:
-취소 제외 recorded_amount 합계:
-활성 중복 신청:
-통과 메시지:
+1001 상태 / recorded_amount: 완료 / 100000
+1004 상태 / recorded_amount: 취소 / 150000
+1005 상태 / recorded_amount: 신청 / 120000 (학생 102 → 강의 302, 강의 302의 price를 복사)
+최종 enrollments 행 수: 5
+전체 recorded_amount 합계: 590000
+취소 제외 건수: 4
+취소 제외 recorded_amount 합계: 440000
+활성 중복 신청: 0
+통과 메시지: Chapter 07 course project changes passed (Output 탭)
 ```
+
+> 세 행의 상태·금액은 03 마지막 결과 화면에서 직접 확인했다. 행 수·합계·취소 제외 값·활성 중복은 03의 완료 검사 블록이
+> 5 / 590000 / 4·440000 / 0과 다르면 오류를 내고 COMMIT 전에 멈추므로, 통과 메시지로 확인했다. (8장 04 검산값에서 숫자로 다시 확인)
+> 7-1 예상과 모두 같다. 1004는 취소됐지만 recorded_amount 150000이 그대로 남았다.
 
 ### 조건부 UPDATE에서 예상 이전 상태를 확인해야 하는 이유
 
 ```text
-
+UPDATE ... SET status = '완료' WHERE id = 1001 AND status = '수강중'처럼 이전 상태를 조건에 넣으면,
+1001이 이미 취소된 상태라면 0행이 바뀌고 '취소 → 완료' 같은 말이 안 되는 덮어쓰기가 일어나지 않는다.
+id만 조건으로 쓰면 지금 상태가 무엇이든 무조건 바뀐다. 또 03은 시작 전에 1001=수강중, 1004=신청, 1005 없음,
+강의 302 가격 120000인지 먼저 검사하고, 끝난 뒤 결과를 검사해서 하나라도 다르면 전체를 COMMIT하지 않는다.
+그래서 파일을 두 번 실행하거나 다른 상태에서 실행해도 데이터가 반쯤만 바뀌는 일이 생기지 않는다.
 ```
 
 ### 증거 화면
@@ -351,7 +359,9 @@ code/chapter07/03_course_project_changes.sql
 assignments/chapter07/images/step07_changes.png
 ```
 
-`여기에 주요 변경 전/후 결과를 삽입하세요.`
+![변경 시나리오 결과](./images/step07_changes.png)
+
+> `03_course_project_changes.sql` 전체 실행 결과. Output에 `Chapter 07 course project changes passed`, 아래 결과는 1001 완료 / 1004 취소 / 1005 신청과 각 recorded_amount다. (변경 전 상태 1001 수강중·1004 신청·1005 없음은 6-2에서 확인)
 
 ---
 

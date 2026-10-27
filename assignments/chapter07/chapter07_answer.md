@@ -425,34 +425,64 @@ code/chapter07/05_course_project_integrity_tests.sql
 
 > 오류 테스트는 파일 전체를 무작정 실행하지 않고 **한 테스트 구간씩** 실행합니다.
 
+> 05 파일의 테스트를 각각 `BEGIN ... EXCEPTION` 블록으로 따로 실행하고 SQLSTATE·제약조건 이름·메시지를 표로 모으는
+> `code/chapter07/my_05_test_report.sql`로 실행했다. (Ch06과 같은 방식: 실패한 테스트는 그 문장만 취소되고, 경계 테스트 임시 행은 바로 삭제)
+> 14개 테스트 모두 예상 = 실제.
+
+| # | 테스트 | 기대 | 실제 | SQLSTATE | 동작한 제약조건 |
+| ---: | --- | --- | --- | --- | --- |
+| 1 | 경계 A: 무료 강의 price=0, description=NULL, recorded_amount=0 | 성공 | 성공 | - | - |
+| 10 | 오류 0: 학생 이름 NULL | 실패 | 실패 | 23502 | NOT NULL (`students.name`) |
+| 11 | 오류 1: 학생 이메일 중복 | 실패 | 실패 | 23505 | `uq_course_students_email` |
+| 12 | 오류 2: 강사 이메일 중복 | 실패 | 실패 | 23505 | `uq_course_instructors_email` |
+| 13 | 오류 3: 없는 강사 999 참조 | 실패 | 실패 | 23503 | `fk_course_courses_instructor` |
+| 14 | 오류 4: 난이도 expert | 실패 | 실패 | 23514 | `chk_course_courses_level` |
+| 15 | 오류 5: 강의 가격 -1 | 실패 | 실패 | 23514 | `chk_course_courses_price` |
+| 16 | 오류 6: 신청 상태 '대기' | 실패 | 실패 | 23514 | `chk_course_enrollments_status` |
+| 17 | 오류 7: recorded_amount -1 | 실패 | 실패 | 23514 | `chk_course_enrollments_recorded_amount` |
+| 18 | 오류 8: 없는 학생 999 참조 | 실패 | 실패 | 23503 | `fk_course_enrollments_student` |
+| 19 | 오류 9: 없는 강의 999 참조 | 실패 | 실패 | 23503 | `fk_course_enrollments_course` |
+| 20 | 오류 10: 학생 101·강의 302 두 번째 활성 신청 | 실패 | 실패 | 23505 | `uq_course_enrollments_active` |
+| 21 | 오류 11: 신청 이력 있는 학생 101 삭제 | 실패 | 실패 | 23001 | `fk_course_enrollments_student` (RESTRICT) |
+| 22 | 오류 12: 강의 담당 강사 201 삭제 | 실패 | 실패 | 23001 | `fk_course_courses_instructor` (RESTRICT) |
+
 ## 9-1. 허용되어야 하는 경계값 1개
 
 ```text
-테스트 내용:
-기대 결과:
-실제 결과:
-왜 허용되어야 하는가:
+테스트 내용: 강사 202의 무료 강의 1801(price = 0, description = NULL)을 만들고,
+            학생 103이 이 강의를 recorded_amount = 0으로 신청(1802)
+기대 결과: 성공
+실제 결과: 성공 (기록 후 1802, 1801 임시 행 삭제)
+왜 허용되어야 하는가: 무료 강의는 실제로 있을 수 있고, P07-D01에서 무료는 0으로 표현하기로 했다.
+                    CHECK는 price >= 0, recorded_amount >= 0이라 0은 경계값으로 통과해야 한다.
+                    강의 설명은 요구사항 R03에서 '선택'이므로 NULL도 허용되어야 한다.
 ```
 
 ## 9-2. 실패해야 하는 테스트 1 — 잘못된 참조 또는 값
 
 ```text
-테스트 내용:
-기대 결과:
-실제 오류 핵심:
-동작한 제약조건/규칙:
-왜 실패해야 하는가:
+테스트 내용: 존재하지 않는 학생 999가 강의 303을 신청 (오류 8)
+기대 결과: 실패
+실제 오류 핵심: SQLSTATE 23503
+               insert or update on table "enrollments" violates foreign key constraint "fk_course_enrollments_student"
+동작한 제약조건/규칙: fk_course_enrollments_student (enrollments.student_id → students.id)
+왜 실패해야 하는가: 학생 999는 students에 없다. 저장되면 누가 신청했는지 알 수 없는 고아 신청이 된다. (P07-R09)
 ```
 
 ## 9-3. 실패해야 하는 테스트 2 — 활성 중복 신청
 
 ```text
-테스트 내용:
-기대 결과:
-실제 오류 핵심:
-동작한 인덱스/규칙:
-왜 실패해야 하는가:
+테스트 내용: 학생 101이 강의 302를 '수강중'으로 한 번 더 신청 (오류 10)
+기대 결과: 실패
+실제 오류 핵심: SQLSTATE 23505
+               duplicate key value violates unique constraint "uq_course_enrollments_active"
+동작한 인덱스/규칙: 부분 고유 인덱스 uq_course_enrollments_active (student_id, course_id) WHERE status IN ('신청','수강중')
+왜 실패해야 하는가: 학생 101은 강의 302에 이미 '신청' 상태인 1002가 있다. 진행 중 신청이 두 건이면
+                  같은 강의를 두 번 신청·수강하는 것이 되어 P07-D03에 어긋난다.
+                  반대로 완료·취소된 신청은 인덱스 조건에서 빠지므로, 그 뒤의 재신청은 막지 않는다.
 ```
+
+> 오류 11·12(참조 중인 부모 삭제)는 SQLSTATE가 `23503`이 아니라 `23001`(restrict_violation)로 나왔다. `ON DELETE RESTRICT`로 만든 FK라서 PostgreSQL이 RESTRICT 설정 위반으로 따로 구분해 알려 준다. (Ch06 오류 10과 같은 결과)
 
 ## 9-4. 실패 후 기준 상태 재검증
 
@@ -464,7 +494,10 @@ code/chapter07/05_course_project_integrity_tests.sql
 ### 실패 테스트가 프로젝트 품질 검증에 필요한 이유
 
 ```text
-
+정상 데이터만 넣어 보면 제약조건이 실제로 걸려 있는지, 이름만 있고 동작하지 않는지 알 수 없다.
+잘못된 값을 일부러 넣어서 DB가 거부하는 것을 확인해야 "이 규칙은 DB가 지킨다"고 말할 수 있다.
+또 오류 메시지의 제약조건 이름을 보면 어떤 요구사항(R07, R09, D03 등)이 막아 준 것인지 연결된다.
+마지막으로 실패 뒤 04를 다시 돌려 기준 상태가 그대로인지 확인해야, 실패한 시도가 데이터를 망가뜨리지 않았다는 것까지 검증된다.
 ```
 
 ### 증거 화면

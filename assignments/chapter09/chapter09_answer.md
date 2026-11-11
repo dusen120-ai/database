@@ -995,8 +995,8 @@ SQL 오류는 DB가 아는 규칙(문법·CHECK·FK·UNIQUE) 위반만 알려 �
 - [x] AI 제안의 COMMIT/ROLLBACK/영향 행 수 검증을 확인했다.
 - [x] 핵심 캡처는 3~4장 정도로 정리했다.
 - [x] 캡처에 비밀번호·개인정보가 없다.
-- [ ] GitHub 웹에서 Markdown과 이미지가 정상적으로 보인다.
-- [ ] 최종 파일을 commit/push했다.
+- [x] GitHub 웹에서 Markdown과 이미지가 정상적으로 보인다.
+- [x] 최종 파일을 commit/push했다.
 
 ---
 

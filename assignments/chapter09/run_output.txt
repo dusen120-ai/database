@@ -1,0 +1,504 @@
+########## 01_transaction_lab_schema.sql
+ current_database 
+------------------
+ ai_database_book
+(1개 행)
+
+ current_schema 
+----------------
+ public
+(1개 행)
+
+   search_path   
+-----------------
+ "$user", public
+(1개 행)
+
+DO
+BEGIN
+CREATE SCHEMA
+CREATE TABLE
+CREATE TABLE
+CREATE INDEX
+CREATE TABLE
+DO
+COMMIT
+  table_schema   |    table_name    
+-----------------+------------------
+ transaction_lab | course_inventory
+ transaction_lab | enrollments
+ transaction_lab | payments
+(3개 행)
+
+                  validation_result                  
+-----------------------------------------------------
+ Chapter 09 transaction lab schema validation passed
+(1개 행)
+
+exit=0
+                     릴레이션 목록
+     스키마      |       이름       |  형태  |  소유주  
+-----------------+------------------+--------+----------
+ transaction_lab | course_inventory | 테이블 | postgres
+ transaction_lab | enrollments      | 테이블 | postgres
+ transaction_lab | payments         | 테이블 | postgres
+(3개 행)
+
+        "transaction_lab.course_inventory" 테이블
+     필드명      |  형태   | 정렬규칙 | NULL허용 | 초기값 
+-----------------+---------+----------+----------+--------
+ course_id       | integer |          | not null | 
+ capacity        | integer |          | not null | 
+ remaining_seats | integer |          | not null | 
+인덱스들:
+    "course_inventory_pkey" PRIMARY KEY, btree (course_id)
+체크 제약 조건:
+    "chk_transaction_inventory_capacity" CHECK (capacity > 0)
+    "chk_transaction_inventory_remaining" CHECK (remaining_seats >= 0 AND remaining_seats <= capacity)
+참조키 제약 조건:
+    "fk_transaction_inventory_course" FOREIGN KEY (course_id) REFERENCES course_project.courses(id) ON DELETE RESTRICT
+
+
+########## 02_transaction_lab_seed.sql
+ current_database 
+------------------
+ ai_database_book
+(1개 행)
+
+ current_schema 
+----------------
+ public
+(1개 행)
+
+   search_path   
+-----------------
+ "$user", public
+(1개 행)
+
+BEGIN
+DO
+INSERT 0 3
+DO
+COMMIT
+ course_id |       title        | price  | capacity | remaining_seats 
+-----------+--------------------+--------+----------+-----------------
+       301 | 데이터베이스 입문  | 100000 |        2 |               2
+       302 | 정규화 실습        | 120000 |        1 |               1
+       303 | 파이썬 데이터 분석 | 150000 |        1 |               1
+(3개 행)
+
+ inventory_count 
+-----------------
+               3
+(1개 행)
+
+ lab_enrollment_count 
+----------------------
+                    0
+(1개 행)
+
+ payment_count 
+---------------
+             0
+(1개 행)
+
+                 validation_result                 
+---------------------------------------------------
+ Chapter 09 transaction lab seed validation passed
+(1개 행)
+
+exit=0
+
+########## 03_commit_transaction.sql
+ current_database 
+------------------
+ ai_database_book
+(1개 행)
+
+ current_schema 
+----------------
+ public
+(1개 행)
+
+   search_path   
+-----------------
+ "$user", public
+(1개 행)
+
+BEGIN
+DO
+ course_id |       title       | price  | remaining_seats 
+-----------+-------------------+--------+-----------------
+       301 | 데이터베이스 입문 | 100000 |               2
+(1개 행)
+
+  id  | enrollment_id | amount 
+------+---------------+--------
+ 9901 |          9001 | 100000
+(1개 행)
+
+INSERT 0 1
+ enrollment_id | student_id | course_id | status | recorded_amount | payment_id | amount | remaining_seats 
+---------------+------------+-----------+--------+-----------------+------------+--------+-----------------
+          9001 |        101 |       301 | 수강중 |          100000 |       9901 | 100000 |               1
+(1개 행)
+
+DO
+COMMIT
+ enrollment_id | student_id | course_id | payment_id | amount | remaining_seats 
+---------------+------------+-----------+------------+--------+-----------------
+          9001 |        101 |       301 |       9901 | 100000 |               1
+(1개 행)
+
+             validation_result             
+-------------------------------------------
+ Chapter 09 first commit validation passed
+(1개 행)
+
+exit=0
+
+########## 관찰: 미확정 변경은 다른 세션에 보이지 않음 (303 임시 변경 후 ROLLBACK)
+-- Session B (A가 아직 COMMIT/ROLLBACK 전)
+    who    | remaining_seats 
+-----------+-----------------
+ Session B |               1
+(1개 행)
+
+-- Session A 출력
+BEGIN
+UPDATE 1
+       who        | remaining_seats 
+------------------+-----------------
+ Session A (내부) |               0
+(1개 행)
+
+ pg_sleep 
+----------
+ 
+(1개 행)
+
+ROLLBACK
+-- ROLLBACK 후
+ course_id | remaining_seats 
+-----------+-----------------
+       301 |               1
+       302 |               1
+       303 |               1
+(3개 행)
+
+
+########## 04_rollback_transaction.sql
+ current_database 
+------------------
+ ai_database_book
+(1개 행)
+
+ current_schema 
+----------------
+ public
+(1개 행)
+
+   search_path   
+-----------------
+ "$user", public
+(1개 행)
+
+BEGIN
+DO
+ course_id | capacity | remaining_seats 
+-----------+----------+-----------------
+       302 |        1 |               1
+(1개 행)
+
+  id  | enrollment_id | amount 
+------+---------------+--------
+ 9902 |          9002 | 120000
+(1개 행)
+
+INSERT 0 1
+ enrollment_id | student_id | course_id | recorded_amount | payment_id | amount | remaining_seats 
+---------------+------------+-----------+-----------------+------------+--------+-----------------
+          9002 |        102 |       302 |          120000 |       9902 | 120000 |               0
+(1개 행)
+
+DO
+ROLLBACK
+ course_id | capacity | remaining_seats 
+-----------+----------+-----------------
+       302 |        1 |               1
+(1개 행)
+
+ id | student_id | course_id | enrolled_at | status | recorded_amount 
+----+------------+-----------+-------------+--------+-----------------
+(0개 행)
+
+ id | enrollment_id | amount | paid_at 
+----+---------------+--------+---------
+(0개 행)
+
+DO
+           validation_result           
+---------------------------------------
+ Chapter 09 rollback validation passed
+(1개 행)
+
+exit=0
+
+########## 관찰: ROLLBACK과 IDENTITY 번호 (자동 번호 신청을 만들었다가 ROLLBACK)
+-- 실험 전 시퀀스
+ last_value | is_called 
+------------+-----------
+          1 | f
+(1개 행)
+
+-- 트랜잭션 (BEGIN → id 생략 INSERT → ROLLBACK)
+BEGIN
+ id 
+----
+  1
+(1개 행)
+
+INSERT 0 1
+ROLLBACK
+-- 실험 후 시퀀스 / 행 수
+ last_value | is_called 
+------------+-----------
+          1 | t
+(1개 행)
+
+ lab_enrollments 
+-----------------
+               1
+(1개 행)
+
+
+########## 05_commit_and_sold_out.sql
+ current_database 
+------------------
+ ai_database_book
+(1개 행)
+
+ current_schema 
+----------------
+ public
+(1개 행)
+
+   search_path   
+-----------------
+ "$user", public
+(1개 행)
+
+BEGIN
+DO
+ course_id | capacity | remaining_seats 
+-----------+----------+-----------------
+       302 |        1 |               1
+(1개 행)
+
+  id  | enrollment_id | amount 
+------+---------------+--------
+ 9902 |          9002 | 120000
+(1개 행)
+
+INSERT 0 1
+ enrollment_id | student_id | course_id | recorded_amount | payment_id | amount | remaining_seats 
+---------------+------------+-----------+-----------------+------------+--------+-----------------
+          9002 |        103 |       302 |          120000 |       9902 | 120000 |               0
+(1개 행)
+
+DO
+COMMIT
+BEGIN
+DO
+ id | enrollment_id | amount 
+----+---------------+--------
+(0개 행)
+
+INSERT 0 0
+DO
+ROLLBACK
+BEGIN
+ALTER TABLE
+ALTER TABLE
+COMMIT
+ course_id | capacity | remaining_seats 
+-----------+----------+-----------------
+       302 |        1 |               0
+(1개 행)
+
+  id  | student_id | course_id | status | recorded_amount 
+------+------------+-----------+--------+-----------------
+ 9001 |        101 |       301 | 수강중 |          100000
+ 9002 |        103 |       302 | 수강중 |          120000
+(2개 행)
+
+  id  | enrollment_id | amount |            paid_at            
+------+---------------+--------+-------------------------------
+ 9901 |          9001 | 100000 | 2026-11-11 18:28:16.572669+09
+ 9902 |          9002 | 120000 | 2026-11-11 18:33:08.112312+09
+(2개 행)
+
+DO
+           validation_result           
+---------------------------------------
+ Chapter 09 sold-out validation passed
+(1개 행)
+
+exit=0
+
+########## 관찰: 좌석 0인 302에 조건부 UPDATE 단독 실행 (영향 행 수 확인 후 ROLLBACK)
+BEGIN
+ course_id | remaining_seats 
+-----------+-----------------
+(0개 행)
+
+UPDATE 0
+ROLLBACK
+ last_value | is_called 
+------------+-----------
+       9003 | f
+(1개 행)
+
+ last_value | is_called 
+------------+-----------
+       9903 | f
+(1개 행)
+
+
+########## 06_transaction_validation.sql
+ current_database 
+------------------
+ ai_database_book
+(1개 행)
+
+ current_schema 
+----------------
+ public
+(1개 행)
+
+   search_path   
+-----------------
+ "$user", public
+(1개 행)
+
+ project_enrollment_count | project_recorded_amount | active_enrollment_count | active_recorded_amount | non_cancelled_count | non_cancelled_recorded_amount 
+--------------------------+-------------------------+-------------------------+------------------------+---------------------+-------------------------------
+                        5 |                  590000 |                       3 |                 340000 |                   4 |                        440000
+(1개 행)
+
+ lab_enrollment_count 
+----------------------
+                    2
+(1개 행)
+
+ payment_count 
+---------------
+             2
+(1개 행)
+
+ course_id |       title        | capacity | remaining_seats | expected_remaining_ok 
+-----------+--------------------+----------+-----------------+-----------------------
+       301 | 데이터베이스 입문  |        2 |               1 | t
+       302 | 정규화 실습        |        1 |               0 | t
+       303 | 파이썬 데이터 분석 |        1 |               1 | t
+(3개 행)
+
+ enrollment_id | student_id | student_name | course_id |   course_title    | status | recorded_amount | payment_id | amount | amount_matches | remaining_seats 
+---------------+------------+--------------+-----------+-------------------+--------+-----------------+------------+--------+----------------+-----------------
+          9001 |        101 | 김민지       |       301 | 데이터베이스 입문 | 수강중 |          100000 |       9901 | 100000 | t              |               1
+          9002 |        103 | 박서연       |       302 | 정규화 실습       | 수강중 |          120000 |       9902 | 120000 | t              |               0
+(2개 행)
+
+ course_id | capacity | remaining_seats 
+-----------+----------+-----------------
+(0개 행)
+
+ enrollment_id | recorded_amount | payment_amount 
+---------------+-----------------+----------------
+(0개 행)
+
+ id | enrollment_id | amount | paid_at 
+----+---------------+--------+---------
+(0개 행)
+
+ student_id | course_id | active_count 
+------------+-----------+--------------
+(0개 행)
+
+ course_id |       title        | capacity | remaining_seats | active_enrollment_count | used_seats | is_consistent 
+-----------+--------------------+----------+-----------------+-------------------------+------------+---------------
+       301 | 데이터베이스 입문  |        2 |               1 |                       1 |          1 | t
+       302 | 정규화 실습        |        1 |               0 |                       1 |          1 | t
+       303 | 파이썬 데이터 분석 |        1 |               1 |                       0 |          0 | t
+(3개 행)
+
+ id | student_id | course_id | enrolled_at | status | recorded_amount 
+----+------------+-----------+-------------+--------+-----------------
+(0개 행)
+
+ id | enrollment_id | amount | paid_at 
+----+---------------+--------+---------
+(0개 행)
+
+DO
+               validation_result               
+-----------------------------------------------
+ Chapter 09 main transaction validation passed
+(1개 행)
+
+exit=0
+
+########## 07 실험 2 재현 (psql 두 세션): lock_timeout 5s 초과
+-- 기본 설정
+ transaction_isolation 
+-----------------------
+ read committed
+(1개 행)
+
+ lock_timeout 
+--------------
+ 0
+(1개 행)
+
+-- Session B
+BEGIN
+ session_b_pid |    t     
+---------------+----------
+         22830 | 19:16:51
+(1개 행)
+
+SET
+ERROR:  canceling statement due to lock timeout
+구문:  while locking tuple (0,3) in relation "course_inventory"
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+ROLLBACK
+-- Session A
+BEGIN
+ session_a_pid |    t     
+---------------+----------
+         22828 | 19:16:50
+(1개 행)
+
+ course_id | capacity | remaining_seats 
+-----------+----------+-----------------
+       303 |        1 |               1
+(1개 행)
+
+ pg_sleep 
+----------
+ 
+(1개 행)
+
+ a_rollback_at 
+---------------
+ 19:16:58
+(1개 행)
+
+ROLLBACK
+-- 종료 후
+ course_id | capacity | remaining_seats 
+-----------+----------+-----------------
+       303 |        1 |               1
+(1개 행)
+

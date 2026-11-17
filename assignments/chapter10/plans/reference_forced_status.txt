@@ -1,0 +1,24 @@
+BEGIN
+SET
+                                                                           QUERY PLAN                                                                           
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Bitmap Heap Scan on enrollments  (cost=1237.77..2345.62 rows=29748 width=19) (actual time=2.367..15.681 rows=30001.00 loops=1)
+   Recheck Cond: ((status)::text = '수강중'::text)
+   Heap Blocks: exact=736
+   Buffers: shared hit=864
+   ->  Bitmap Index Scan on idx_performance_enrollments_course_status  (cost=0.00..1230.33 rows=29748 width=0) (actual time=2.284..2.284 rows=30001.00 loops=1)
+         Index Cond: ((status)::text = '수강중'::text)
+         Index Searches: 1
+         Buffers: shared hit=128
+ Planning:
+   Buffers: shared hit=105
+ Planning Time: 0.570 ms
+ Execution Time: 17.240 ms
+(12개 행)
+
+ROLLBACK
+ enable_seqscan 
+----------------
+ on
+(1개 행)
+

@@ -1,0 +1,27 @@
+작업수행시간 보임
+CREATE TABLE AS
+작업시간: 44.310 ms
+CREATE TABLE AS
+작업시간: 15.858 ms
+CREATE INDEX
+작업시간: 150.673 ms
+CREATE INDEX
+작업시간: 1.426 ms
+INSERT 0 100005
+작업시간: 373.275 ms
+INSERT 0 100005
+작업시간: 306.342 ms
+TRUNCATE TABLE
+작업시간: 2.131 ms
+TRUNCATE TABLE
+작업시간: 5.536 ms
+INSERT 0 100005
+작업시간: 26.145 ms
+INSERT 0 100005
+작업시간: 247.246 ms
+  heap   | extra_indexes 
+---------+---------------
+ 5888 kB | 2056 kB
+(1개 행)
+
+작업시간: 0.672 ms

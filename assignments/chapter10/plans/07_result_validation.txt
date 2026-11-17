@@ -1,0 +1,56 @@
+ current_database 
+------------------
+ ai_database_book
+(1개 행)
+
+ current_schema 
+----------------
+ public
+(1개 행)
+
+   search_path   
+-----------------
+ "$user", public
+(1개 행)
+
+ server_version 
+----------------
+ 18.6
+(1개 행)
+
+ email_result_count 
+--------------------
+                  1
+(1개 행)
+
+ title_result_count 
+--------------------
+                  1
+(1개 행)
+
+ student_5000_enrollment_count 
+-------------------------------
+                            10
+(1개 행)
+
+ course_1500_enrollment_count 
+------------------------------
+                           50
+(1개 행)
+
+ course_1500_learning_count 
+----------------------------
+                         15
+(1개 행)
+
+ all_learning_count 
+--------------------
+              30001
+(1개 행)
+
+ student_id | course_id | active_count 
+------------+-----------+--------------
+(0개 행)
+
+psql:code/chapter10/07_result_validation.sql:328: NOTICE:  Chapter 10 performance result validation passed
+DO

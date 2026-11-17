@@ -1,0 +1,11 @@
+SET
+CREATE TABLE AS
+CREATE TABLE AS
+CREATE INDEX
+CREATE INDEX
+NOTICE:  round 1 : no_index=30.9 ms, with_2_indexes=185.4 ms
+NOTICE:  round 2 : no_index=21.1 ms, with_2_indexes=154.0 ms
+NOTICE:  round 3 : no_index=22.5 ms, with_2_indexes=156.8 ms
+NOTICE:  round 4 : no_index=23.7 ms, with_2_indexes=155.1 ms
+NOTICE:  round 5 : no_index=22.7 ms, with_2_indexes=150.9 ms
+DO

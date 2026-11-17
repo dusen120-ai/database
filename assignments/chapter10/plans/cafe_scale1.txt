@@ -1,0 +1,143 @@
+########## 규모: 1
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+INSERT 0 20
+INSERT 0 100
+INSERT 0 300
+INSERT 0 600
+ANALYZE
+ANALYZE
+ANALYZE
+ANALYZE
+=== BEFORE P10-Q01: 카페 7의 최근 방문 10건
+                                                    QUERY PLAN                                                    
+------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=6.04..6.07 rows=10 width=13) (actual time=0.035..0.036 rows=10.00 loops=1)
+   Buffers: local hit=2
+   ->  Sort  (cost=6.04..6.08 rows=15 width=13) (actual time=0.034..0.035 rows=10.00 loops=1)
+         Sort Key: visited_on DESC
+         Sort Method: quicksort  Memory: 25kB
+         Buffers: local hit=2
+         ->  Seq Scan on visits  (cost=0.00..5.75 rows=15 width=13) (actual time=0.007..0.026 rows=15.00 loops=1)
+               Filter: (cafe_id = 7)
+               Rows Removed by Filter: 285
+               Buffers: local hit=2
+ Planning:
+   Buffers: shared hit=43, local hit=1
+ Planning Time: 0.208 ms
+ Execution Time: 0.053 ms
+(14개 행)
+
+=== BEFORE P10-Q02: 방문 150의 주문 내역
+                                                       QUERY PLAN                                                        
+-------------------------------------------------------------------------------------------------------------------------
+ Hash Join  (cost=11.53..14.04 rows=2 width=17) (actual time=0.061..0.069 rows=2.00 loops=1)
+   Hash Cond: (m.id = vi.menu_item_id)
+   Buffers: local hit=5
+   ->  Seq Scan on menu_items m  (cost=0.00..2.00 rows=100 width=13) (actual time=0.003..0.008 rows=100.00 loops=1)
+         Buffers: local hit=1
+   ->  Hash  (cost=11.50..11.50 rows=2 width=12) (actual time=0.047..0.048 rows=2.00 loops=1)
+         Buckets: 1024  Batches: 1  Memory Usage: 9kB
+         Buffers: local hit=4
+         ->  Seq Scan on visit_items vi  (cost=0.00..11.50 rows=2 width=12) (actual time=0.024..0.044 rows=2.00 loops=1)
+               Filter: (visit_id = 150)
+               Rows Removed by Filter: 598
+               Buffers: local hit=4
+ Planning:
+   Buffers: shared hit=87, local hit=4
+ Planning Time: 0.294 ms
+ Execution Time: 0.088 ms
+(16개 행)
+
+=== BEFORE AI-3: 평점 4.0 이상 방문 (약 33% 반환)
+                                               QUERY PLAN                                               
+--------------------------------------------------------------------------------------------------------
+ Seq Scan on visits  (cost=0.00..5.75 rows=100 width=12) (actual time=0.004..0.042 rows=100.00 loops=1)
+   Filter: (rating >= 4.0)
+   Rows Removed by Filter: 200
+   Buffers: local hit=2
+ Planning Time: 0.018 ms
+ Execution Time: 0.049 ms
+(6개 행)
+
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+=== AFTER P10-Q01
+                                                    QUERY PLAN                                                    
+------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=6.04..6.07 rows=10 width=13) (actual time=0.028..0.029 rows=10.00 loops=1)
+   Buffers: local hit=2
+   ->  Sort  (cost=6.04..6.08 rows=15 width=13) (actual time=0.027..0.028 rows=10.00 loops=1)
+         Sort Key: visited_on DESC
+         Sort Method: quicksort  Memory: 25kB
+         Buffers: local hit=2
+         ->  Seq Scan on visits  (cost=0.00..5.75 rows=15 width=13) (actual time=0.005..0.024 rows=15.00 loops=1)
+               Filter: (cafe_id = 7)
+               Rows Removed by Filter: 285
+               Buffers: local hit=2
+ Planning:
+   Buffers: shared hit=37, local read=2
+ Planning Time: 0.184 ms
+ Execution Time: 0.035 ms
+(14개 행)
+
+=== AFTER P10-Q02
+                                                                   QUERY PLAN                                                                   
+------------------------------------------------------------------------------------------------------------------------------------------------
+ Hash Join  (cost=8.10..10.62 rows=2 width=17) (actual time=0.036..0.043 rows=2.00 loops=1)
+   Hash Cond: (m.id = vi.menu_item_id)
+   Buffers: local hit=2 read=2
+   ->  Seq Scan on menu_items m  (cost=0.00..2.00 rows=100 width=13) (actual time=0.003..0.008 rows=100.00 loops=1)
+         Buffers: local hit=1
+   ->  Hash  (cost=8.07..8.07 rows=2 width=12) (actual time=0.026..0.026 rows=2.00 loops=1)
+         Buckets: 1024  Batches: 1  Memory Usage: 9kB
+         Buffers: local hit=1 read=2
+         ->  Bitmap Heap Scan on visit_items vi  (cost=4.29..8.07 rows=2 width=12) (actual time=0.024..0.025 rows=2.00 loops=1)
+               Recheck Cond: (visit_id = 150)
+               Heap Blocks: exact=1
+               Buffers: local hit=1 read=2
+               ->  Bitmap Index Scan on idx_visit_items_visit_id  (cost=0.00..4.29 rows=2 width=0) (actual time=0.017..0.017 rows=2.00 loops=1)
+                     Index Cond: (visit_id = 150)
+                     Index Searches: 1
+                     Buffers: local read=2
+ Planning:
+   Buffers: shared hit=18, local hit=2 read=1
+ Planning Time: 0.123 ms
+ Execution Time: 0.052 ms
+(20개 행)
+
+=== AFTER AI-3
+                                               QUERY PLAN                                               
+--------------------------------------------------------------------------------------------------------
+ Seq Scan on visits  (cost=0.00..5.75 rows=100 width=12) (actual time=0.004..0.038 rows=100.00 loops=1)
+   Filter: (rating >= 4.0)
+   Rows Removed by Filter: 200
+   Buffers: local hit=2
+ Planning:
+   Buffers: shared hit=3
+ Planning Time: 0.020 ms
+ Execution Time: 0.043 ms
+(8개 행)
+
+=== 결과 행 수 (전후 동일해야 함)
+ q1 | q2 | ai3 
+----+----+-----
+ 10 |  2 | 100
+(1개 행)
+
+          relname           | pg_size_pretty 
+----------------------------+----------------
+ idx_visit_items_visit_id   | 32 kB
+ idx_visits_cafe_visited_on | 16 kB
+ idx_visits_rating          | 16 kB
+ visit_items                | 8192 bytes
+ visit_items                | 0 bytes
+ visit_items                | 32 kB
+ visits                     | 16 kB
+ visits                     | 8192 bytes
+ visits                     | 0 bytes
+(9개 행)
+

@@ -1,0 +1,135 @@
+########## 규모: 100
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+INSERT 0 200
+INSERT 0 1000
+INSERT 0 30000
+INSERT 0 60000
+ANALYZE
+ANALYZE
+ANALYZE
+ANALYZE
+=== BEFORE P10-Q01: 카페 7의 최근 방문 10건
+                                                      QUERY PLAN                                                      
+----------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=570.24..570.27 rows=10 width=13) (actual time=1.563..1.565 rows=10.00 loops=1)
+   Buffers: local hit=192
+   ->  Sort  (cost=570.24..570.62 rows=150 width=13) (actual time=1.562..1.563 rows=10.00 loops=1)
+         Sort Key: visited_on DESC
+         Sort Method: top-N heapsort  Memory: 25kB
+         Buffers: local hit=192
+         ->  Seq Scan on visits  (cost=0.00..567.00 rows=150 width=13) (actual time=0.008..1.541 rows=150.00 loops=1)
+               Filter: (cafe_id = 7)
+               Rows Removed by Filter: 29850
+               Buffers: local hit=192
+ Planning:
+   Buffers: shared hit=43, local hit=1
+ Planning Time: 0.232 ms
+ Execution Time: 1.589 ms
+(14개 행)
+
+=== BEFORE P10-Q02: 방문 150의 주문 내역
+                                                               QUERY PLAN                                                               
+----------------------------------------------------------------------------------------------------------------------------------------
+ Nested Loop  (cost=0.28..1091.60 rows=2 width=18) (actual time=0.021..2.334 rows=2.00 loops=1)
+   Buffers: local hit=331
+   ->  Seq Scan on visit_items vi  (cost=0.00..1075.00 rows=2 width=12) (actual time=0.017..2.328 rows=2.00 loops=1)
+         Filter: (visit_id = 150)
+         Rows Removed by Filter: 59998
+         Buffers: local hit=325
+   ->  Index Scan using menu_items_pkey on menu_items m  (cost=0.28..8.29 rows=1 width=14) (actual time=0.002..0.002 rows=1.00 loops=2)
+         Index Cond: (id = vi.menu_item_id)
+         Index Searches: 2
+         Buffers: local hit=6
+ Planning:
+   Buffers: shared hit=87, local hit=8
+ Planning Time: 0.274 ms
+ Execution Time: 2.354 ms
+(14개 행)
+
+=== BEFORE AI-3: 평점 4.0 이상 방문 (약 33% 반환)
+                                                  QUERY PLAN                                                  
+--------------------------------------------------------------------------------------------------------------
+ Seq Scan on visits  (cost=0.00..567.00 rows=10000 width=12) (actual time=0.004..2.519 rows=10000.00 loops=1)
+   Filter: (rating >= 4.0)
+   Rows Removed by Filter: 20000
+   Buffers: local hit=192
+ Planning Time: 0.015 ms
+ Execution Time: 2.872 ms
+(6개 행)
+
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+=== AFTER P10-Q01
+                                                                        QUERY PLAN                                                                         
+-----------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.29..29.53 rows=10 width=13) (actual time=0.014..0.021 rows=10.00 loops=1)
+   Buffers: local hit=10 read=2
+   ->  Index Scan Backward using idx_visits_cafe_visited_on on visits  (cost=0.29..438.88 rows=150 width=13) (actual time=0.013..0.019 rows=10.00 loops=1)
+         Index Cond: (cafe_id = 7)
+         Index Searches: 1
+         Buffers: local hit=10 read=2
+ Planning:
+   Buffers: shared hit=37, local read=2
+ Planning Time: 0.189 ms
+ Execution Time: 0.028 ms
+(10개 행)
+
+=== AFTER P10-Q02
+                                                                    QUERY PLAN                                                                     
+---------------------------------------------------------------------------------------------------------------------------------------------------
+ Nested Loop  (cost=0.56..24.93 rows=2 width=18) (actual time=0.013..0.015 rows=2.00 loops=1)
+   Buffers: local hit=7 read=2
+   ->  Index Scan using idx_visit_items_visit_id on visit_items vi  (cost=0.29..8.32 rows=2 width=12) (actual time=0.010..0.011 rows=2.00 loops=1)
+         Index Cond: (visit_id = 150)
+         Index Searches: 1
+         Buffers: local hit=1 read=2
+   ->  Index Scan using menu_items_pkey on menu_items m  (cost=0.28..8.29 rows=1 width=14) (actual time=0.001..0.001 rows=1.00 loops=2)
+         Index Cond: (id = vi.menu_item_id)
+         Index Searches: 2
+         Buffers: local hit=6
+ Planning:
+   Buffers: shared hit=18, local hit=6 read=1
+ Planning Time: 0.126 ms
+ Execution Time: 0.031 ms
+(14개 행)
+
+=== AFTER AI-3
+                                                              QUERY PLAN                                                               
+---------------------------------------------------------------------------------------------------------------------------------------
+ Bitmap Heap Scan on visits  (cost=189.79..506.79 rows=10000 width=12) (actual time=0.322..1.098 rows=10000.00 loops=1)
+   Recheck Cond: (rating >= 4.0)
+   Heap Blocks: exact=192
+   Buffers: local hit=192 read=29
+   ->  Bitmap Index Scan on idx_visits_rating  (cost=0.00..187.29 rows=10000 width=0) (actual time=0.300..0.300 rows=10000.00 loops=1)
+         Index Cond: (rating >= 4.0)
+         Index Searches: 1
+         Buffers: local read=29
+ Planning:
+   Buffers: shared hit=3
+ Planning Time: 0.019 ms
+ Execution Time: 1.440 ms
+(12개 행)
+
+=== 결과 행 수 (전후 동일해야 함)
+ q1 | q2 |  ai3  
+----+----+-------
+ 10 |  2 | 10000
+(1개 행)
+
+          relname           | pg_size_pretty 
+----------------------------+----------------
+ idx_visit_items_visit_id   | 1200 kB
+ idx_visits_cafe_visited_on | 240 kB
+ idx_visits_rating          | 672 kB
+ visit_items                | 8192 bytes
+ visit_items                | 0 bytes
+ visit_items                | 2600 kB
+ visits                     | 1536 kB
+ visits                     | 8192 bytes
+ visits                     | 0 bytes
+(9개 행)
+

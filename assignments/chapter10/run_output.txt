@@ -1,0 +1,305 @@
+########## 01_performance_lab_schema.sql
+ current_database 
+------------------
+ ai_database_book
+(1개 행)
+
+ current_user 
+--------------
+ postgres
+(1개 행)
+
+ current_schema 
+----------------
+ public
+(1개 행)
+
+   search_path   
+-----------------
+ "$user", public
+(1개 행)
+
+ server_version 
+----------------
+ 18.6
+(1개 행)
+
+DO
+BEGIN
+CREATE SCHEMA
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+psql:code/chapter10/01_performance_lab_schema.sql:352: NOTICE:  Chapter 10 performance lab schema validation passed
+DO
+COMMIT
+  table_schema   | table_name  
+-----------------+-------------
+ performance_lab | courses
+ performance_lab | enrollments
+ performance_lab | instructors
+ performance_lab | students
+(4개 행)
+
+########## 02_performance_lab_seed.sql
+ current_database 
+------------------
+ ai_database_book
+(1개 행)
+
+ current_schema 
+----------------
+ public
+(1개 행)
+
+   search_path   
+-----------------
+ "$user", public
+(1개 행)
+
+ server_version 
+----------------
+ 18.6
+(1개 행)
+
+BEGIN
+DO
+INSERT 0 3
+INSERT 0 2
+INSERT 0 3
+INSERT 0 5
+INSERT 0 10000
+INSERT 0 2000
+INSERT 0 100000
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+ANALYZE
+ANALYZE
+ANALYZE
+ANALYZE
+psql:code/chapter10/02_performance_lab_seed.sql:304: NOTICE:  Chapter 10 performance lab seed validation passed
+DO
+COMMIT
+ student_count 
+---------------
+         10003
+(1개 행)
+
+ instructor_count 
+------------------
+                2
+(1개 행)
+
+ course_count 
+--------------
+         2003
+(1개 행)
+
+ enrollment_count 
+------------------
+           100005
+(1개 행)
+
+ status | row_count 
+--------+-----------
+ 신청   |     30002
+ 수강중 |     30001
+ 완료   |     20001
+ 취소   |     20001
+(4개 행)
+
+ course_id | status | row_count 
+-----------+--------+-----------
+      1500 | 신청   |        15
+      1500 | 수강중 |        15
+      1500 | 완료   |        10
+      1500 | 취소   |        10
+(4개 행)
+
+          cond           |   n   |  pct   
+-------------------------+-------+--------
+ email performance5000   |     1 |  0.010
+ student_id=5000         |    10 |  0.010
+ course_id=1500          |    50 |  0.050
+ course_id=1500 & 수강중 |    15 |  0.015
+ status=수강중           | 30001 | 30.000
+(5개 행)
+
+########## 04_create_candidate_indexes.sql
+ current_database 
+------------------
+ ai_database_book
+(1개 행)
+
+ current_schema 
+----------------
+ public
+(1개 행)
+
+   search_path   
+-----------------
+ "$user", public
+(1개 행)
+
+ server_version 
+----------------
+ 18.6
+(1개 행)
+
+BEGIN
+DO
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+psql:code/chapter10/04_create_candidate_indexes.sql:110: NOTICE:  Chapter 10 candidate index creation passed
+DO
+COMMIT
+  tablename  |                 indexname                 |                                                       indexdef                                                        
+-------------+-------------------------------------------+-----------------------------------------------------------------------------------------------------------------------
+ courses     | courses_pkey                              | CREATE UNIQUE INDEX courses_pkey ON performance_lab.courses USING btree (id)
+ courses     | idx_performance_courses_title             | CREATE INDEX idx_performance_courses_title ON performance_lab.courses USING btree (title)
+ enrollments | enrollments_pkey                          | CREATE UNIQUE INDEX enrollments_pkey ON performance_lab.enrollments USING btree (id)
+ enrollments | idx_performance_enrollments_course_status | CREATE INDEX idx_performance_enrollments_course_status ON performance_lab.enrollments USING btree (course_id, status)
+ enrollments | idx_performance_enrollments_student_id    | CREATE INDEX idx_performance_enrollments_student_id ON performance_lab.enrollments USING btree (student_id)
+ instructors | instructors_pkey                          | CREATE UNIQUE INDEX instructors_pkey ON performance_lab.instructors USING btree (id)
+ instructors | uq_performance_instructors_email          | CREATE UNIQUE INDEX uq_performance_instructors_email ON performance_lab.instructors USING btree (email)
+ students    | students_pkey                             | CREATE UNIQUE INDEX students_pkey ON performance_lab.students USING btree (id)
+ students    | uq_performance_students_email             | CREATE UNIQUE INDEX uq_performance_students_email ON performance_lab.students USING btree (email)
+(9개 행)
+
+########## 06_index_review.sql
+ current_database 
+------------------
+ ai_database_book
+(1개 행)
+
+ current_schema 
+----------------
+ public
+(1개 행)
+
+   search_path   
+-----------------
+ "$user", public
+(1개 행)
+
+ server_version 
+----------------
+ 18.6
+(1개 행)
+
+DO
+   schemaname    |  tablename  |                 indexname                 |                                                       indexdef                                                        
+-----------------+-------------+-------------------------------------------+-----------------------------------------------------------------------------------------------------------------------
+ performance_lab | courses     | courses_pkey                              | CREATE UNIQUE INDEX courses_pkey ON performance_lab.courses USING btree (id)
+ performance_lab | courses     | idx_performance_courses_title             | CREATE INDEX idx_performance_courses_title ON performance_lab.courses USING btree (title)
+ performance_lab | enrollments | enrollments_pkey                          | CREATE UNIQUE INDEX enrollments_pkey ON performance_lab.enrollments USING btree (id)
+ performance_lab | enrollments | idx_performance_enrollments_course_status | CREATE INDEX idx_performance_enrollments_course_status ON performance_lab.enrollments USING btree (course_id, status)
+ performance_lab | enrollments | idx_performance_enrollments_student_id    | CREATE INDEX idx_performance_enrollments_student_id ON performance_lab.enrollments USING btree (student_id)
+ performance_lab | instructors | instructors_pkey                          | CREATE UNIQUE INDEX instructors_pkey ON performance_lab.instructors USING btree (id)
+ performance_lab | instructors | uq_performance_instructors_email          | CREATE UNIQUE INDEX uq_performance_instructors_email ON performance_lab.instructors USING btree (email)
+ performance_lab | students    | students_pkey                             | CREATE UNIQUE INDEX students_pkey ON performance_lab.students USING btree (id)
+ performance_lab | students    | uq_performance_students_email             | CREATE UNIQUE INDEX uq_performance_students_email ON performance_lab.students USING btree (email)
+(9개 행)
+
+     datname      | stats_reset 
+------------------+-------------
+ ai_database_book | 
+(1개 행)
+
+   schemaname    | table_name  |                index_name                 | idx_scan | idx_tup_read | idx_tup_fetch | index_size 
+-----------------+-------------+-------------------------------------------+----------+--------------+---------------+------------
+ performance_lab | courses     | courses_pkey                              |   100132 |       100132 |        100112 | 64 kB
+ performance_lab | courses     | idx_performance_courses_title             |       20 |        10125 |         10120 | 120 kB
+ performance_lab | enrollments | enrollments_pkey                          |        0 |            0 |             0 | 2208 kB
+ performance_lab | enrollments | idx_performance_enrollments_course_status |       36 |       180666 |             0 | 960 kB
+ performance_lab | enrollments | idx_performance_enrollments_student_id    |       10 |          100 |            50 | 936 kB
+ performance_lab | instructors | instructors_pkey                          |     2003 |         2003 |          2003 | 16 kB
+ performance_lab | instructors | uq_performance_instructors_email          |        0 |            0 |             0 | 16 kB
+ performance_lab | students    | students_pkey                             |   100019 |       100019 |        100019 | 240 kB
+ performance_lab | students    | uq_performance_students_email             |       22 |           22 |            11 | 536 kB
+(9개 행)
+
+   schemaname    | table_name  | table_size | all_indexes_size | total_size 
+-----------------+-------------+------------+------------------+------------
+ performance_lab | courses     | 272 kB     | 184 kB           | 496 kB
+ performance_lab | enrollments | 5888 kB    | 4104 kB          | 10024 kB
+ performance_lab | instructors | 8192 bytes | 32 kB            | 40 kB
+ performance_lab | students    | 832 kB     | 776 kB           | 1640 kB
+(4개 행)
+
+ table_name  |                index_name                 | is_primary | is_unique | is_valid | is_ready |                                                   index_definition                                                    
+-------------+-------------------------------------------+------------+-----------+----------+----------+-----------------------------------------------------------------------------------------------------------------------
+ courses     | courses_pkey                              | t          | t         | t        | t        | CREATE UNIQUE INDEX courses_pkey ON performance_lab.courses USING btree (id)
+ courses     | idx_performance_courses_title             | f          | f         | t        | t        | CREATE INDEX idx_performance_courses_title ON performance_lab.courses USING btree (title)
+ enrollments | enrollments_pkey                          | t          | t         | t        | t        | CREATE UNIQUE INDEX enrollments_pkey ON performance_lab.enrollments USING btree (id)
+ enrollments | idx_performance_enrollments_course_status | f          | f         | t        | t        | CREATE INDEX idx_performance_enrollments_course_status ON performance_lab.enrollments USING btree (course_id, status)
+ enrollments | idx_performance_enrollments_student_id    | f          | f         | t        | t        | CREATE INDEX idx_performance_enrollments_student_id ON performance_lab.enrollments USING btree (student_id)
+ instructors | instructors_pkey                          | t          | t         | t        | t        | CREATE UNIQUE INDEX instructors_pkey ON performance_lab.instructors USING btree (id)
+ instructors | uq_performance_instructors_email          | f          | t         | t        | t        | CREATE UNIQUE INDEX uq_performance_instructors_email ON performance_lab.instructors USING btree (email)
+ students    | students_pkey                             | t          | t         | t        | t        | CREATE UNIQUE INDEX students_pkey ON performance_lab.students USING btree (id)
+ students    | uq_performance_students_email             | f          | t         | t        | t        | CREATE UNIQUE INDEX uq_performance_students_email ON performance_lab.students USING btree (email)
+(9개 행)
+
+psql:code/chapter10/06_index_review.sql:137: NOTICE:  Chapter 10 index review validation passed
+DO
+########## 07_result_validation.sql
+ current_database 
+------------------
+ ai_database_book
+(1개 행)
+
+ current_schema 
+----------------
+ public
+(1개 행)
+
+   search_path   
+-----------------
+ "$user", public
+(1개 행)
+
+ server_version 
+----------------
+ 18.6
+(1개 행)
+
+ email_result_count 
+--------------------
+                  1
+(1개 행)
+
+ title_result_count 
+--------------------
+                  1
+(1개 행)
+
+ student_5000_enrollment_count 
+-------------------------------
+                            10
+(1개 행)
+
+ course_1500_enrollment_count 
+------------------------------
+                           50
+(1개 행)
+
+ course_1500_learning_count 
+----------------------------
+                         15
+(1개 행)
+
+ all_learning_count 
+--------------------
+              30001
+(1개 행)
+
+ student_id | course_id | active_count 
+------------+-----------+--------------
+(0개 행)
+
+psql:code/chapter10/07_result_validation.sql:328: NOTICE:  Chapter 10 performance result validation passed
+DO

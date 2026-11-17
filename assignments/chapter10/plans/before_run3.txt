@@ -1,0 +1,154 @@
+ current_database 
+------------------
+ ai_database_book
+(1개 행)
+
+ current_schema 
+----------------
+ public
+(1개 행)
+
+   search_path   
+-----------------
+ "$user", public
+(1개 행)
+
+ server_version 
+----------------
+ 18.6
+(1개 행)
+
+ enable_seqscan 
+----------------
+ on
+(1개 행)
+
+ enable_indexscan 
+------------------
+ on
+(1개 행)
+
+ enable_bitmapscan 
+-------------------
+ on
+(1개 행)
+
+DO
+  tablename  |            indexname             |                                                indexdef                                                 
+-------------+----------------------------------+---------------------------------------------------------------------------------------------------------
+ courses     | courses_pkey                     | CREATE UNIQUE INDEX courses_pkey ON performance_lab.courses USING btree (id)
+ enrollments | enrollments_pkey                 | CREATE UNIQUE INDEX enrollments_pkey ON performance_lab.enrollments USING btree (id)
+ instructors | instructors_pkey                 | CREATE UNIQUE INDEX instructors_pkey ON performance_lab.instructors USING btree (id)
+ instructors | uq_performance_instructors_email | CREATE UNIQUE INDEX uq_performance_instructors_email ON performance_lab.instructors USING btree (email)
+ students    | students_pkey                    | CREATE UNIQUE INDEX students_pkey ON performance_lab.students USING btree (id)
+ students    | uq_performance_students_email    | CREATE UNIQUE INDEX uq_performance_students_email ON performance_lab.students USING btree (email)
+(6개 행)
+
+                                                                 QUERY PLAN                                                                 
+--------------------------------------------------------------------------------------------------------------------------------------------
+ Index Scan using uq_performance_students_email on students  (cost=0.29..8.30 rows=1 width=49) (actual time=0.003..0.003 rows=1.00 loops=1)
+   Index Cond: ((email)::text = 'performance5000@example.com'::text)
+   Index Searches: 1
+   Buffers: shared hit=3
+ Planning:
+   Buffers: shared hit=3
+ Planning Time: 0.016 ms
+ Execution Time: 0.006 ms
+(8개 행)
+
+                                              QUERY PLAN                                              
+------------------------------------------------------------------------------------------------------
+ Seq Scan on courses  (cost=0.00..59.04 rows=1 width=47) (actual time=0.029..0.103 rows=1.00 loops=1)
+   Filter: ((title)::text = '성능 테스트 강의 00500'::text)
+   Rows Removed by Filter: 2002
+   Buffers: shared hit=34
+ Planning:
+   Buffers: shared hit=6
+ Planning Time: 0.013 ms
+ Execution Time: 0.105 ms
+(8개 행)
+
+                                                                QUERY PLAN                                                                
+------------------------------------------------------------------------------------------------------------------------------------------
+ Nested Loop  (cost=0.56..2061.42 rows=10 width=62) (actual time=1.383..3.459 rows=10.00 loops=1)
+   Buffers: shared hit=769
+   ->  Nested Loop  (cost=0.29..1994.46 rows=10 width=37) (actual time=1.381..3.443 rows=10.00 loops=1)
+         Buffers: shared hit=739
+         ->  Index Scan using students_pkey on students s  (cost=0.29..8.30 rows=1 width=21) (actual time=0.005..0.005 rows=1.00 loops=1)
+               Index Cond: (id = 5000)
+               Index Searches: 1
+               Buffers: shared hit=3
+         ->  Seq Scan on enrollments e  (cost=0.00..1986.06 rows=10 width=24) (actual time=1.376..3.437 rows=10.00 loops=1)
+               Filter: (student_id = 5000)
+               Rows Removed by Filter: 99995
+               Buffers: shared hit=736
+   ->  Index Scan using courses_pkey on courses c  (cost=0.28..6.69 rows=1 width=33) (actual time=0.001..0.001 rows=1.00 loops=10)
+         Index Cond: (id = e.course_id)
+         Index Searches: 10
+         Buffers: shared hit=30
+ Planning:
+   Buffers: shared hit=89
+ Planning Time: 0.163 ms
+ Execution Time: 3.467 ms
+(20개 행)
+
+                                                  QUERY PLAN                                                  
+--------------------------------------------------------------------------------------------------------------
+ Seq Scan on enrollments  (cost=0.00..1986.06 rows=50 width=24) (actual time=0.039..3.480 rows=50.00 loops=1)
+   Filter: (course_id = 1500)
+   Rows Removed by Filter: 99955
+   Buffers: shared hit=736
+ Planning Time: 0.008 ms
+ Execution Time: 3.485 ms
+(6개 행)
+
+                                                  QUERY PLAN                                                  
+--------------------------------------------------------------------------------------------------------------
+ Seq Scan on enrollments  (cost=0.00..2236.07 rows=15 width=24) (actual time=0.124..3.899 rows=15.00 loops=1)
+   Filter: ((course_id = 1500) AND ((status)::text = '수강중'::text))
+   Rows Removed by Filter: 99990
+   Buffers: shared hit=736
+ Planning Time: 0.011 ms
+ Execution Time: 3.901 ms
+(6개 행)
+
+                                                     QUERY PLAN                                                     
+--------------------------------------------------------------------------------------------------------------------
+ Seq Scan on enrollments  (cost=0.00..1986.06 rows=29748 width=19) (actual time=0.002..5.766 rows=30001.00 loops=1)
+   Filter: ((status)::text = '수강중'::text)
+   Rows Removed by Filter: 70004
+   Buffers: shared hit=736
+ Planning Time: 0.007 ms
+ Execution Time: 6.747 ms
+(6개 행)
+
+                                                    QUERY PLAN                                                    
+------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=163.87..168.88 rows=2003 width=47) (actual time=0.682..0.750 rows=2003.00 loops=1)
+   Sort Key: title
+   Sort Method: quicksort  Memory: 179kB
+   Buffers: shared hit=37
+   ->  Seq Scan on courses  (cost=0.00..54.03 rows=2003 width=47) (actual time=0.002..0.153 rows=2003.00 loops=1)
+         Buffers: shared hit=34
+ Planning:
+   Buffers: shared hit=5
+ Planning Time: 0.012 ms
+ Execution Time: 0.819 ms
+(10개 행)
+
+                                                       QUERY PLAN                                                       
+------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=107.33..107.38 rows=20 width=47) (actual time=0.347..0.349 rows=20.00 loops=1)
+   Buffers: shared hit=34
+   ->  Sort  (cost=107.33..112.34 rows=2003 width=47) (actual time=0.347..0.347 rows=20.00 loops=1)
+         Sort Key: title
+         Sort Method: top-N heapsort  Memory: 26kB
+         Buffers: shared hit=34
+         ->  Seq Scan on courses  (cost=0.00..54.03 rows=2003 width=47) (actual time=0.001..0.149 rows=2003.00 loops=1)
+               Buffers: shared hit=34
+ Planning Time: 0.009 ms
+ Execution Time: 0.353 ms
+(10개 행)
+
+psql:code/chapter10/03_baseline_explain.sql:147: NOTICE:  Chapter 10 baseline explain validation passed
+DO

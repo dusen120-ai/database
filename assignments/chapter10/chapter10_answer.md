@@ -38,7 +38,7 @@ SHOW search_path;
 
 | 확인 항목 | 실제 결과 | 의미 |
 | --- | --- | --- |
-| PostgreSQL 버전 | `PostgreSQL 18.6 on aarch64-apple-darwin24.6.0` (클라이언트 psql 16.15) | 교재 자동 검증 기준(16)보다 높은 18이다. 18에는 B-tree Skip Scan, `EXPLAIN ANALYZE`의 `Index Searches` 표시, 기본 `BUFFERS` 출력 등이 추가되어 계획 모양이 교재와 다를 수 있다. |
+| PostgreSQL 버전 | `PostgreSQL 18.6 on aarch64-apple-darwin24.6.0` (클라이언트 psql 16.15) | 교재 자동 검증 기준(16)보다 높은 18이다. 18에서는 B-tree Skip Scan이 추가되었고, 이번 실행 계획에서도 `Index Searches` 줄과 소수점이 붙은 actual rows(예: `rows=10.00`)처럼 16과 다른 표시가 나타났다. |
 | `current_database()` | `ai_database_book` | 교재 실습 DB. `course_project`, `transaction_lab`이 있는 곳이며 `performance_lab`도 여기에 만든다. |
 | `current_user` | `postgres` | 로컬 관리자 역할이라 `performance_lab` 스키마를 만들 CREATE 권한이 있다. |
 | `current_schema()` | `public` | 스키마를 생략하면 `public`에 객체가 생긴다. 실습 SQL은 모두 `performance_lab.`처럼 스키마를 명시하므로 영향이 없다. |
@@ -51,9 +51,9 @@ SHOW search_path;
 버전이 다르면 다른 계획이 나올 수 있으므로, 버전 없이 남긴 실행 계획은 재현·비교할 수 없다.
 
 실제로 이번 실습에서도 버전 차이가 보였다.
-- PostgreSQL 18은 EXPLAIN ANALYZE 결과에 "Index Searches: 1" 줄을 추가로 출력한다 (16에는 없음).
+- PostgreSQL 18은 EXPLAIN ANALYZE 결과에 "Index Searches: 1" 줄을 추가로 출력한다(16에는 없다).
 - 18에는 B-tree Skip Scan이 있어서 (course_id, status) 인덱스의 후행 컬럼 status만으로
-  조회할 때 16과 다른 계획이 나올 "가능성"이 있다. (실제 결과는 8장 참고: 이 데이터에서는 Seq Scan 유지)
+  조회할 때 16과 다른 계획이 나올 "가능성"이 있다. (실제로 이 데이터에서는 Seq Scan이 유지되었다. 8장 참고)
 교재 기준(16)과 내 결과(18.6)가 다를 때 "내가 틀렸는지, 버전 차이인지"를 구분하려면 버전 기록이 필수다.
 ```
 
@@ -97,7 +97,8 @@ enrollments: 5
 
 1001 = 완료 / 100000, 1004 = 취소 / 150000, 1005 = 신청 / 120000 → 기준과 일치
 performance_lab 스키마: 실습 시작 전 존재하지 않음 (깨끗한 시작)
-실습 종료 후 07_result_validation.sql에서 course_project 보존을 다시 확인 → 통과
+실습 종료 후 07_result_validation.sql에서 course_project 보존을 다시 확인했고 통과했다.
+07_result_validation.sql에서 Chapter 07 구조 기준(명명 제약조건 15개, NOT NULL 열 20개)도 함께 검사했고 통과했다.
 ```
 
 ### 성능 실험을 기존 `course_project`에 대량 데이터를 넣지 않고 별도 스키마에서 하는 이유
@@ -145,6 +146,8 @@ code/chapter10/02_performance_lab_seed.sql     → NOTICE: Chapter 10 performanc
 ### 선택도가 낮은 조건과 많은 행을 반환하는 조건은 인덱스 판단에서 어떻게 다르게 볼 수 있나요?
 
 ```text
+여기서 '선택도가 낮다' = 전체 중 돌려주는 행의 비율이 작다는 뜻으로 사용한다.
+
 - 반환 비율이 아주 작은 조건(student_id = 5000 → 0.01%, course_id = 1500 → 0.05%)은
   인덱스로 해당 위치만 찾아가면 10만 행 중 10~50행만 읽으면 된다. 인덱스 후보로 적합하다.
   실제로 이 조건들은 인덱스 생성 후 Buffers가 736 → 3~52로 줄었다(7장).
@@ -276,14 +279,14 @@ WHERE course_id = 1500
 ### `cost`와 실제 실행 시간이 같은 개념이 아닌 이유
 
 ```text
-cost는 옵티마이저가 계획을 "고르기 위해" 계산한 상대적인 추정 점수다. 단위는 ms가 아니라
-"순차 페이지 1개 읽기 = 1.0"(seq_page_cost)을 기준으로 한 임의 단위이고, 실행 전에 통계로 계산한다.
-actual time은 실제로 실행해서 잰 ms다.
+cost는 옵티마이저가 계획을 고르기 위해 실행 전에 통계로 계산한 상대 점수이다.
+단위는 ms가 아니라 "순차 페이지 1개 읽기 = 1.0"을 기준으로 한 임의의 단위이다.
+actual time은 실제로 실행해서 잰 ms이다.
 
-예) Query B의 기준 계획은 cost=2061.42인데 실제 시간은 약 4 ms였고,
-    #6 status 조회는 cost=1986.06으로 B보다 cost가 낮지만 실제 시간은 약 7 ms로 더 오래 걸렸다.
-    (#6은 3만 행을 결과로 만들어 넘기는 비용이 cost 모델에 비해 컸다.)
-cost는 같은 SQL의 "후보 계획끼리" 비교하는 용도이지, 다른 SQL끼리 혹은 실제 시간으로 환산하는 값이 아니다.
+예를 들면 #4(course_id = 1500)와 #6(status = '수강중')의 Seq Scan은 cost가 똑같이 1986.06이고
+읽은 페이지도 똑같이 736이었다. 그런데 실행 시간은 약 3.6 ms와 6.9 ms로 거의 두 배 차이가 났다.
+#6은 30001행을 결과로 만들어 위로 넘겨야 했기 때문이다. cost가 같아도 실제 시간은 다를 수 있는데,
+cost는 같은 SQL의 후보 계획끼리 비교하는 용도이지, 실제 시간으로 환산하는 값이 아니다.
 ```
 
 ### `EXPLAIN ANALYZE`는 실제 SQL을 실행한다는 점을 왜 기억해야 하나요?
@@ -316,7 +319,7 @@ assignments/chapter10/images/step04_before_plan.png
 | 후보 인덱스 | 대응 조회 패턴 | 예상 이점 | 컬럼 순서 이유 | 예상 비용/단점 |
 | --- | --- | --- | --- | --- |
 | `idx_performance_courses_title` `(title)` | Query A: `WHERE title = ?` (1행), #7·#8: `ORDER BY title [LIMIT 20]` | Seq Scan이 2002행을 버리던 것을 Index Scan 1건으로. 인덱스는 title 순으로 정렬되어 있어 ORDER BY의 Sort를 없애고, LIMIT 20이면 앞 20개만 읽고 멈출 수 있음 | 단일 컬럼. 등호 검색과 정렬 모두 title 하나가 기준 | courses는 2003행·34페이지로 작아서 이점이 절대량으로는 작음. 강의 등록/제목 수정 때마다 인덱스 갱신. 문자열이라 크기가 비교적 큼 |
-| `idx_performance_enrollments_student_id` `(student_id)` | Query B: `WHERE e.student_id = ?` + JOIN (10행 = 0.01%) | 10만 행 Seq Scan(736페이지)을 학생 1명 위치로 바로 이동하는 탐색으로 | 단일 컬럼. 조회 조건이 student_id 등호 하나. FK(`student_id → students.id`) 자식 컬럼이라 학생 삭제 시 RESTRICT 검사에도 쓰임 | enrollments는 신청이 계속 쌓이는 쓰기 많은 테이블 → INSERT마다 인덱스 갱신. 10만 행 기준 수백 kB 추가 저장 |
+| `idx_performance_enrollments_student_id` `(student_id)` | Query B: `WHERE e.student_id = ?` + JOIN (10행 = 0.01%) | 10만 행 Seq Scan(736페이지)을 학생 1명 위치로 바로 이동하는 탐색으로 | 단일 컬럼. 조회 조건이 student_id 등호 하나. FK(`student_id → students.id`) 자식 컬럼이라 학생 삭제 시 RESTRICT 검사에도 쓰임 | enrollments는 신청이 계속 쌓이는 쓰기 많은 테이블 → INSERT마다 인덱스 갱신. 10만 행 기준 수백 kB 추가 저장 (실측 936 kB, 10장) |
 | `idx_performance_enrollments_course_status` `(course_id, status)` | Query C: `course_id = ? AND status = ?` (15행), #4: `course_id = ?` (50행) | 두 조건을 모두 인덱스 안에서 걸러 15행 위치만 방문. 선두가 course_id라 course_id 단독 조회에도 재사용 가능 → course_id 단독 인덱스를 따로 만들 필요 없음 | **course_id를 앞에**: 거의 항상 등호로 주어지고 값 종류가 2000개라 범위를 크게 좁힘(0.05%). status는 4종류뿐(약 20~30%)이라 선두에 두면 처음에 거의 못 좁힘. status 단독 조회는 이 인덱스로 이득을 보기 어려울 것으로 예상(8장에서 확인) | enrollments 쓰기 비용 추가. status 변경(신청→수강중→완료)은 UPDATE 때마다 이 인덱스 항목도 갱신해야 함(HOT 업데이트 불가) |
 
 ### "중요한 컬럼이므로 인덱스를 만든다"는 설명이 부족한 이유
@@ -325,7 +328,7 @@ assignments/chapter10/images/step04_before_plan.png
 인덱스의 이득은 "컬럼이 중요한가"가 아니라 "어떤 조회가 그 컬럼을 어떤 식으로(등호/범위/정렬)
 쓰고, 그 조건이 전체의 몇 %를 돌려주는가"로 결정된다.
 - status는 업무적으로 매우 중요한 컬럼이지만 4종류 값뿐이라 한 값이 30%를 차지한다.
-  인덱스가 있어도 Seq Scan이 더 싸다(8장에서 실제로 확인).
+  인덱스가 있어도 Seq Scan이 더 싸다. 이를 8장에서 실제로 확인했다.
 - 반대로 student_id는 "중요"하다기보다 0.01%만 돌려주는 반복 조회의 조건이라 효과가 크다.
 또한 인덱스마다 쓰기·저장 비용이 있으므로, 어떤 SQL이 얼마나 자주 실행되고 기준 계획에서
 무엇이 낭비되는지(Rows Removed, Buffers)를 근거로 말할 수 있어야 한다.
@@ -343,11 +346,14 @@ B-tree 복합 인덱스는 "첫 번째 컬럼으로 정렬하고, 같은 값 안
   - status 단독                  → status는 course_id 2000개 구간마다 흩어져 있어 바로 못 감
 (status, course_id):
   - status 단독                  → 가능하지만 30%를 돌려주므로 어차피 이득이 작음
-  - course_id 단독               → 선두가 아니라 바로 못 감 ✘ (course_id 단독 조회를 위해 인덱스가 하나 더 필요)
-둘 다 "course_id AND status" 조회는 처리할 수 있지만, 그 밖의 조회(course_id 단독)까지 재사용되는 것은
-(course_id, status)뿐이다. 그래서 등호로 자주 쓰이고 범위를 많이 좁히는 컬럼을 앞에 둔다.
-PostgreSQL 18의 Skip Scan은 선두 컬럼 값 종류가 "적을 때" 후행 컬럼만으로도 쓸 수 있게 해주지만,
-course_id는 2000종류라 이득이 없다(8장).
+  - course_id 단독               → PG16: 선두 컬럼이 아니라 바로 못 감 ✘
+                                   PG18: status가 4종류뿐이라 Skip Scan으로 사용 가능.
+                                   단 참고 실험에서 Index Searches 9회, 인덱스 페이지 18개로
+                                   (course_id, status)의 1회·2페이지보다 비효율적
+                                   (plans/reference_status_first_index.txt, 세션 전용 TEMP 복사본으로 확인)
+둘 다 "course_id AND status" 조회는 처리할 수 있지만, course_id 단독 조회까지 가장 효율적으로
+처리하는 것은 (course_id, status)이다. 버전과 무관하게 등호로 자주 쓰이고 범위를 많이 좁히는 컬럼을 앞에 둔다.
+Skip Scan은 선두 컬럼 값 종류가 적을 때(status 4종류) 효과가 있고, 많을 때(course_id 2000종류)는 이득이 없다(8장).
 ```
 
 ---
@@ -367,7 +373,7 @@ CREATE INDEX idx_performance_enrollments_course_status ON performance_lab.enroll
 ```text
 후보 인덱스 수: 3
 전체 인덱스 수: 9  (자동 6 = 4개 테이블 PK 4 + students·instructors UNIQUE email 2, 후보 3)
-04는 ANALYZE를 다시 실행하지 않음 → 전후 비교에 같은 테이블 통계 사용
+04는 ANALYZE를 다시 실행하지 않았으므로 전후 비교에 같은 테이블 통계를 사용했다.
 ```
 
 ### PRIMARY KEY나 UNIQUE가 이미 인덱스를 만들 수 있는데 같은 목적의 인덱스를 또 만들면 어떤 문제가 생기나요?
@@ -380,7 +386,7 @@ CREATE INDEX idx_performance_enrollments_course_status ON performance_lab.enroll
   디스크·메모리(공유 버퍼)를 그만큼 더 차지한다. students의 email 인덱스는 536 kB로 테이블(832 kB)의
   절반이 넘는다.
 - 옵티마이저가 고를 후보가 늘어 계획 시간이 약간 늘고, 나중에 "어느 인덱스가 진짜 필요한지"
-  관리하기 어려워진다(idx_scan이 둘로 나뉘어 둘 다 덜 쓰이는 것처럼 보임).
+  관리하기 어려워진다(idx_scan이 둘로 나뉘어 둘 다 덜 쓰이는 것처럼 보인다).
 그래서 인덱스를 만들기 전에 pg_indexes로 PK/UNIQUE/기존 인덱스가 이미 그 컬럼을 덮는지 먼저 확인한다.
 ```
 
@@ -401,9 +407,9 @@ CREATE INDEX idx_performance_enrollments_course_status ON performance_lab.enroll
 | Index Cond | 없음 (Filter로 2002행 버림) | `title = '성능 테스트 강의 00500'` | 버리는 행 없이 인덱스에서 바로 찾음 |
 
 ```text
-결과 행이 동일했는가: 예. 1행 → 1행 (07에서 title_result_count = 1 재확인)
-읽은 버퍼가 줄었는가: 예. 34 → 3
-계획이 바뀌었는가: 예. Seq Scan → Index Scan
+결과 행이 동일했는가: 예. 1행 → 1행으로 같았다(07에서 title_result_count = 1을 다시 확인했다).
+읽은 버퍼가 줄었는가: 예. 34 → 3으로 줄었다.
+계획이 바뀌었는가: 예. Seq Scan에서 Index Scan으로 바뀌었다.
 실행 시간 한 번만으로 결론낼 수 있는가: 아니오. 5회 반복에서 범위가 겹치지 않고 Buffers도 함께 줄었기 때문에
   개선이라고 판단했다. 단, courses는 2003행·34페이지짜리 작은 테이블이라 절대 시간 차이는 0.1 ms 수준이다.
 ```
@@ -450,7 +456,7 @@ cost도 2061.42 → 83.83으로 줄었다. 남은 Buffers 36 중 30은 courses_p
 ```text
 1. 결과가 같아야 한다. 계획이 바뀌어도 결과가 달라지면 실패다 → 07에서 1/1/10/50/15/30001 행 수를 따로 확인했다.
 2. 실제로 덜 읽어야 한다. #7(ORDER BY title)은 Index Scan으로 바뀌었지만 Buffers는 37 → 49로 오히려 늘었다.
-   (인덱스 페이지 12개를 추가로 읽음.) 이번에는 Sort를 없앤 덕분에 시간이 줄었지만,
+   (인덱스 페이지 12개를 추가로 읽었다.) 이번에는 Sort를 없앤 덕분에 시간이 줄었지만,
    더 큰 테이블에서는 인덱스 순서대로 테이블을 무작위로 왔다 갔다 하는 비용이 더 커질 수 있다.
 3. 강제로 Index를 쓰게 하면 더 느려진다. status 단독 조회를 enable_seqscan=off로 강제해 보니
    Bitmap Index Scan으로 바뀌었지만 Buffers 736 → 864, 시간 7.7 → 17.2 ms로 나빠졌다(8장, 참고 실험).
@@ -479,7 +485,7 @@ assignments/chapter10/images/step07_after_plan.png
 실제 행 수 = 30001
 주요 계획 노드 = 인덱스 생성 전·후 모두 Seq Scan on enrollments
                 Filter: status = '수강중', Rows Removed by Filter: 70004, Buffers: shared hit=736
-                Exec 중앙값 6.908 ms(전) / 7.728 ms(후) — 같은 계획·같은 버퍼인데 시간만 약 12% 다름
+                Exec 중앙값 6.908 ms(전) / 7.728 ms(후) — 같은 계획·같은 버퍼인데 시간만 약 12% 달랐다.
 ```
 
 **참고 실험 (최종 증거 아님):** 계획이 왜 그렇게 정해졌는지 보려고 트랜잭션 안에서만 `SET LOCAL enable_seqscan = off`로 실행한 뒤 `ROLLBACK` 했습니다 ([`plans/reference_forced_status.txt`](./plans/reference_forced_status.txt)). 실행 후 `enable_seqscan = on` 복귀를 확인했습니다.
@@ -496,7 +502,7 @@ assignments/chapter10/images/step07_after_plan.png
 ```text
 1. 반환 비율이 크다: 30%(30001행)를 돌려줘야 한다. 3만 행은 736페이지 거의 전부에 고루 퍼져 있어서
    인덱스로 찾아가도 결국 테이블 페이지 736개를 다 읽어야 한다(강제 실험에서 Heap Blocks exact=736).
-2. 인덱스가 오히려 추가 비용이다: 그 위에 인덱스 페이지 128개를 더 읽는다 → 736 vs 864.
+2. 인덱스가 오히려 추가 비용이다: 그 위에 인덱스 페이지 128개를 더 읽는다(736 vs 864).
 3. 복합 인덱스의 후행 컬럼이다: (course_id, status)에서 status는 두 번째 컬럼이라 '수강중'이
    course_id 2000개 구간마다 흩어져 있다. 바로 찾아갈 수 없어 인덱스 전체를 훑어야 한다.
 4. 옵티마이저는 통계(추정 29748행, 실제 30001과 거의 일치)로 두 계획의 cost를 비교해서
@@ -560,9 +566,10 @@ title 인덱스는 이미 제목순으로 정렬된 목록이다. 앞에서부�
 그래서 LIMIT이 작을수록 인덱스 순서 활용의 이득이 크다. "목록 첫 페이지 20개" 같은 화면에 특히 유리하다.
 
 반대로 LIMIT 없이 전체를 정렬할 때는 이득이 작다. 어차피 2003행 전부를 돌려줘야 하고,
-인덱스를 따라 테이블을 왔다 갔다 해야 해서 Buffers가 37 → 49로 오히려 늘었다.
-이번에는 courses가 작아 Sort를 없앤 효과가 더 커서 시간이 줄었지만, 테이블이 크면 Sort + Seq Scan이
-더 나을 수도 있다.
+테이블 34페이지에 더해 인덱스 페이지까지 읽어야 해서 Buffers가 37에서 49로 늘었다.
+이번에는 제목 순서와 테이블 저장 순서가 같아 테이블을 거의 순서대로 읽었고, Sort를 없앤 효과가 더 커서
+시간이 줄었다. 하지만 제목이 무작위로 저장된 큰 테이블이라면 인덱스 순서대로 테이블 페이지를 이동하는
+비용이 커져서 Sort + Seq Scan이 더 나을 수도 있다.
 ```
 
 ### 실제 계획에서 Sort 노드 또는 Index Scan을 어떻게 확인했나요?
@@ -573,7 +580,7 @@ title 인덱스는 이미 제목순으로 정렬된 목록이다. 앞에서부�
 - 후: Sort 노드가 사라지고 "Index Scan using idx_performance_courses_title"가 최상위(또는 Limit 바로 아래)에 있었다.
   Index Cond 줄이 없는 Index Scan = 조건 필터가 아니라 "정렬된 순서"를 얻으려고 인덱스를 쓴 것이다.
 - LIMIT 20 후 계획에서 Index Scan의 actual rows=20 → 인덱스를 20개만 읽고 멈췄음을 확인했다.
-  (전 계획의 Seq Scan actual rows=2003과 비교)
+  (전 계획의 Seq Scan actual rows=2003과 비교했다.)
 ```
 
 ---
@@ -594,7 +601,8 @@ title 인덱스는 이미 제목순으로 정렬된 목록이다. 앞에서부�
 
 ```text
 주의: 위 idx_scan 값에는 내가 03·05를 5회씩 반복 실행한 EXPLAIN ANALYZE와 07의 COUNT 검증이 섞여 있다.
-실제 서비스 사용량이 아니다. 예) course_status의 36 = 05 5회 × (#4, #5) + 강제 실험 + 06·07 검증 등.
+실제 서비스 사용량이 아니다. 예) course_status의 36에는 05를 5회 실행하면서 사전 검사 COUNT와 EXPLAIN ANALYZE(#4, #5)가 사용한 횟수,
+강제 실험, 07 검증 COUNT가 모두 섞여 있다.
 ```
 
 ### `idx_scan = 0`이라는 이유 하나만으로 인덱스를 삭제하면 안 되는 이유
@@ -622,7 +630,7 @@ FK 자식 컬럼 인덱스를 자동으로 만들지 않는다(06 결과: 자동
 하지만 반대 방향에서 성능 문제가 생긴다.
 1. 부모 삭제·키 변경: students 1명을 지우면 ON DELETE RESTRICT 검사로 "이 학생을 참조하는 신청이 있나"를
    enrollments에서 찾아야 한다. 인덱스가 없으면 매번 10만 행 Seq Scan(736페이지)이다.
-2. JOIN: "학생별 신청" 같은 부모 → 자식 조회는 매우 흔하다. Query B에서 이 인덱스 하나로 769 → 36 Buffers.
+2. JOIN: "학생별 신청" 같은 부모 → 자식 조회는 매우 흔하다. Query B에서 이 인덱스 하나로 Buffers가 769 → 36으로 줄었다.
 그래서 필수는 아니지만, 자식 테이블이 크고 부모 기준 조회·삭제가 있으면 만드는 경우가 많다.
 단 "모든 FK에 무조건"은 아니다 — 부모 기준 조회가 없고 자식이 작으면 쓰기 비용만 늘어난다.
 ```
@@ -643,15 +651,15 @@ FK 자식 컬럼 인덱스를 자동으로 만들지 않는다(06 결과: 자동
 ```text
 쓰기 비용:
 - INSERT 한 행마다 테이블 1곳 + 인덱스 수만큼 B-tree에 항목을 끼워 넣어야 한다. 위 실측에서 인덱스 2개만으로
-  10만 행 INSERT가 약 22.7 → 155.1 ms(약 6.8배)가 되었다. (TEMP 테이블·대량 INSERT라 실제 비율은 환경에 따라 다름)
+  10만 행 INSERT가 약 22.7 → 155.1 ms(약 6.8배)가 되었다. (TEMP 테이블·대량 INSERT라 실제 비율은 환경에 따라 다르다.)
 - UPDATE도 비용이 늘어난다. status를 바꾸면 (course_id, status) 인덱스 항목도 바꿔야 하고,
   인덱스 컬럼이 바뀌는 UPDATE는 HOT 업데이트를 못 써서 모든 인덱스에 새 항목이 생긴다.
-- 쓰기 중 인덱스 페이지 분할, WAL(로그) 증가, VACUUM 작업량 증가.
+- 쓰기 중 인덱스 페이지 분할이 생기고, WAL(로그)과 VACUUM 작업량도 늘어난다.
 
 저장 비용 (06 결과):
-- enrollments: 테이블 5888 kB, 인덱스 합계 4104 kB (테이블의 약 70%).
+- enrollments는 테이블 5888 kB, 인덱스 합계 4104 kB로 인덱스가 테이블의 약 70%이다.
   그중 후보 2개가 1896 kB(936 + 960)로 PK(2208 kB)에 가까운 크기다.
-- courses: 테이블 272 kB, 인덱스 184 kB (title 120 kB).
+- courses는 테이블 272 kB, 인덱스 184 kB(title 120 kB)이다.
 - 인덱스도 공유 버퍼(메모리)를 차지하므로 많아지면 정작 테이블 페이지가 캐시에서 밀려날 수 있다.
 ```
 
@@ -671,7 +679,7 @@ course_1500_enrollment_count  = 50
 course_1500_learning_count    = 15
 all_learning_count            = 30001
 동일 학생·강의 활성 신청 중복 = 0행
-performance_lab 10003 / 2 / 2003 / 100005 유지, 후보 인덱스 3개 존재
+performance_lab 10003 / 2 / 2003 / 100005 유지, 전체 인덱스 9개·후보 인덱스 3개 존재, 후보 중 INVALID·not ready 인덱스 0개
 course_project 3 / 2 / 3 / 5, 590000 유지 (Chapter 07·08 보존)
 ```
 
@@ -682,9 +690,9 @@ EXPLAIN ANALYZE는 결과 행을 화면에 보여주지 않고 버린다. 계획
 "같은 행"인지는 알려주지 않는다. 또 계획 비교의 목적은 "같은 답을 더 싸게" 얻는 것이므로,
 답이 같다는 전제가 먼저 확인돼야 시간·Buffers 비교가 의미를 가진다.
 인덱스는 원칙적으로 결과를 바꾸지 않지만, 다음 경우 결과가 달라지거나 비교가 무효가 될 수 있다.
-- 측정 사이에 누군가 데이터를 바꾼 경우(다른 데이터를 잰 셈)
-- 손상·INVALID 인덱스(CREATE INDEX CONCURRENTLY 실패 등)를 사용하는 경우
-- 비교하면서 SQL을 조금 고친 경우(예: 정렬 기준·LIMIT 변경) → "같은 SQL" 비교가 아님
+- 측정 사이에 누군가 데이터를 바꾸면 서로 다른 데이터를 잰 셈이 된다.
+- 하드웨어 오류나 버그로 인덱스가 손상되면 인덱스와 테이블 내용이 어긋나 결과 행이 달라질 수 있다.
+- 비교하면서 SQL을 조금 고치면(예: 정렬 기준·LIMIT 변경) "같은 SQL" 비교가 아니게 된다.
 그래서 07처럼 별도의 COUNT와 자동 판정으로 1/1/10/50/15/30001과 기존 프로젝트 보존을 따로 확인했다.
 ```
 
@@ -703,7 +711,7 @@ Seq Scan이 나온 것은 옵티마이저가 "이 조회에는 인덱스가 더 
 실패 여부는 계획 이름이 아니라 "같은 결과를 더 적은 비용으로 얻었나"로 판단해야 한다.
 
 실행 계획에서 확인한 근거:
-- status = '수강중'(30001행, 30%)은 (course_id, status) 인덱스 생성 후에도 Seq Scan (Buffers 736, 약 7.7 ms).
+- status = '수강중'(30001행, 30%)은 (course_id, status) 인덱스 생성 후에도 Seq Scan이었다(Buffers 736, 약 7.7 ms).
 - 참고로 enable_seqscan=off로 강제하면 Bitmap Index Scan이 되지만 cost 1986 → 2345,
   Buffers 736 → 864, 시간 7.7 → 17.2 ms로 모두 나빠졌다.
 - 같은 인덱스가 course_id 조회(#4: 736 → 52, #5: 736 → 17)에서는 잘 쓰였다.
@@ -726,8 +734,9 @@ Seq Scan이 나온 것은 옵티마이저가 "이 조회에는 인덱스가 더 
   틀린 결론을 냈을 것이다. 실제로는 아무것도 바뀌지 않았고 단지 측정 잡음이다.
 - 반대로 Query B는 Buffers가 769 → 36으로 줄고 5회 범위(3.467~4.183 ms vs 0.038~0.052 ms)가
   전혀 겹치지 않았다. 이 경우에야 "효과가 있다"고 말할 수 있다.
-- 개인 프로젝트 실험(13장)의 rating 인덱스는 시간은 2.87 → 1.44 ms로 줄었지만
-  Buffers는 192 → 221로 늘었다. 시간 한 번만 보면 놓치는 비용이다.
+- 개인 프로젝트 실험(plans/cafe_scale100_v1.txt)에서 비교용으로 함께 측정한 visits(rating) 인덱스
+  (rating >= 4.0, 약 33% 반환)는 시간은 2.87 → 1.44 ms로 줄었지만 Buffers는 192 → 221로 늘었다.
+  시간 한 번만 보면 놓치는 비용이다.
 ```
 
 ---
@@ -738,10 +747,12 @@ Seq Scan이 나온 것은 옵티마이저가 "이 조회에는 인덱스가 더 
 
 | ID | 반복 조회 질문 | WHERE | JOIN | ORDER BY/LIMIT | 예상 반환 비율 | 후보 인덱스 |
 | --- | --- | --- | --- | --- | --- | --- |
-| P10-Q01 | 카페 상세 화면을 열 때마다 "이 카페에 최근 언제 갔고 평점이 어땠나" 최근 10회를 본다 | `cafe_id = ?` | 없음 | `ORDER BY visited_on DESC LIMIT 10` | 카페 1곳 = 방문의 약 0.5~5% (카페 20~200곳 가정), 그중 10행만 | `visits(cafe_id, visited_on)` |
-| P10-Q02 | 방문 기록 한 건을 열 때마다 "그날 뭘 시켰고 얼마였나"를 본다 | `vi.visit_id = ?` | `visit_items` – `menu_items` | 없음 | 방문 1건 = 주문 2행 정도 (주문의 0.003~0.3%) | `visit_items(visit_id)` |
+| P10-Q01 | 카페 상세 화면을 열 때마다 "이 카페에 최근 언제 갔고 평점이 어땠나" 최근 10회를 본다 (근거 요구사항: P07-MR04·MR05) | `cafe_id = ?` | 없음 | `ORDER BY visited_on DESC, id DESC LIMIT 10` | 카페 1곳 = 방문의 약 0.5~5% (카페 20~200곳 가정), 그중 10행만 | `visits(cafe_id, visited_on DESC, id DESC)` |
+| P10-Q02 | 방문 기록 한 건을 열 때마다 "그날 뭘 시켰고 얼마였나"를 본다 (근거 요구사항: P07-MR06·MR07) | `vi.visit_id = ?` | `visit_items` – `menu_items` | 없음 | 방문 1건 = 주문 2행 정도 (주문의 0.003~0.3%) | `visit_items(visit_id)` |
 
 **검증 방법:** `cafe_project`에는 데이터가 없고 Chapter 10은 기존 프로젝트를 바꾸지 않으므로, 같은 구조의 **세션 전용 TEMP 테이블**에 합성 데이터를 넣어 두 규모로 같은 SQL의 전후 계획을 비교했습니다 ([`cafe_index_experiment.sql`](./cafe_index_experiment.sql)). TEMP 테이블은 접속 종료 시 자동 삭제되며 `cafe_project`는 읽지도 쓰지도 않았습니다.
+
+**AI 리뷰 반영 (v2):** 처음(v1)에는 P10-Q01을 `ORDER BY visited_on DESC LIMIT 10`, 후보를 `(cafe_id, visited_on)`으로 실험했고 결과 행을 **개수(10 = 10)로만** 비교했다. 14장에서 AI가 "같은 날 방문이 여러 건이면 순서가 매번 달라질 수 있다"고 지적해 확인해 보니, 합성 데이터의 카페 7은 방문 150건이 5개 날짜에 30건씩 몰려 있어 최근 날짜에 30건이 동점이었다. 그래서 **같은 v1 SQL이 인덱스가 없을 때는 id 806~9806, AI 추천 인덱스가 있을 때는 id 20806~29806을 돌려줬다**. 개수는 같지만 행은 완전히 달랐다(`plans/ai_suggestion_check.txt`). 원래 SQL의 결과 자체가 정해지지 않은 것이므로, 정렬 기준에 `id DESC`를 추가하고 후보 인덱스도 그 순서에 맞춰 바꾼 뒤 다시 측정했다. v2부터는 개수가 아니라 **결과 id 목록**을 전후로 비교했다. v1 스크립트와 로그는 `plans/cafe_index_experiment_v1.sql`, `plans/cafe_scale*_v1.txt`에 보존했다.
 
 | 규모 | 카페 / 방문 / 주문 | 의미 |
 | --- | --- | --- |
@@ -750,25 +761,32 @@ Seq Scan이 나온 것은 옵티마이저가 "이 조회에는 인덱스가 더 
 
 | 조회 | 규모 | Before 계획 / Buffers / Exec | After 계획 / Buffers / Exec | 결과 행 |
 | --- | --- | --- | --- | --- |
-| P10-Q01 | scale 1 | Limit ← Sort ← Seq Scan / 2 / 0.053 ms | **그대로** Seq Scan + Sort (인덱스 무시) / 2 / 0.035 ms | 10 = 10 |
-| P10-Q01 | scale 100 | Limit ← Sort(top-N) ← Seq Scan(rows 150) / **192** / 1.589 ms | Limit ← **Index Scan Backward** using `idx_visits_cafe_visited_on`, Index Cond `cafe_id = 7`, Sort 없음 / **12** / 0.028 ms | 10 = 10 |
-| P10-Q02 | scale 1 | Hash Join ← Seq Scan visit_items / 5 / 0.088 ms | Hash Join ← Bitmap Index Scan `idx_visit_items_visit_id` / 4 / 0.052 ms | 2 = 2 |
-| P10-Q02 | scale 100 | Nested Loop ← Seq Scan visit_items(Rows Removed 59998) / **331** / 2.354 ms | Nested Loop ← **Index Scan** using `idx_visit_items_visit_id`, Index Cond `visit_id = 150` / **9** / 0.031 ms | 2 = 2 |
+| P10-Q01 | scale 1 | Limit ← Sort ← Seq Scan / 2 / 0.031 ms | **그대로** Seq Scan + Sort (인덱스 무시) / 2 / 0.031 ms | id 목록 동일 |
+| P10-Q01 | scale 100 | Limit ← Sort(top-N) ← Seq Scan(rows 150) / **192** / 1.245 ms | Limit ← **Index Scan** using `idx_visits_cafe_visited_on_id`, Index Cond `cafe_id = 7`, Sort 없음 / **12** / 0.027 ms | id 목록 동일 (20806~29806) |
+| P10-Q02 | scale 1 | Hash Join ← Seq Scan visit_items / 5 / 0.093 ms | Hash Join ← Bitmap Index Scan `idx_visit_items_visit_id` / 4 / 0.043 ms | id 목록 동일 (299, 300) |
+| P10-Q02 | scale 100 | Nested Loop ← Seq Scan visit_items(Rows Removed 59998) / **331** / 2.386 ms | Nested Loop ← **Index Scan** using `idx_visit_items_visit_id`, Index Cond `visit_id = 150` / **9** / 0.020 ms | id 목록 동일 (299, 300) |
 
-(각 1회 측정. 시간보다 계획 노드·Buffers·Sort 유무를 주 근거로 삼음. scale 1의 시간 차이는 0.02~0.04 ms로 측정 잡음 수준)
+(v2 기준, 각 1회 측정이다. 시간보다 계획 노드·Buffers·Sort 유무와 결과 id 목록을 주 근거로 삼았다. scale 1의 시간 차이는 0.05 ms 이하로 측정 잡음 수준이다.)
 
 ## 후보 1
 
 ```text
-후보 인덱스: CREATE INDEX idx_visits_cafe_visited_on ON cafe_project.visits (cafe_id, visited_on);
-컬럼 순서: cafe_id → visited_on
-  - cafe_id: 등호 조건이라 선두. 이 카페의 방문 구간으로 바로 이동.
-  - visited_on: 그 구간 안이 날짜순으로 정렬되어 있으므로 ORDER BY visited_on DESC를 뒤에서부터 읽으면
-    (Index Scan Backward) Sort 없이 최근 10건에서 바로 멈출 수 있다. 순서를 반대로 하면 이 효과가 없다.
-  - 덤으로 FK 자식 컬럼(visits.cafe_id)을 선두로 덮어서, 카페 삭제 시 RESTRICT 검사도 이 인덱스로 처리된다.
-이 조회에 도움이 될 것으로 예상한 이유: scale 100에서 Seq Scan + Sort(192 Buffers) → Index Scan Backward(12 Buffers),
-  Sort 노드 사라짐, 읽은 행 150 → 10. 예상대로 동작함을 계획으로 확인.
-쓰기/저장 비용: 방문 기록은 하루 0~몇 건 INSERT라 쓰기 비용은 사실상 무시 가능. 크기는 3만 행에서 240 kB.
+후보 인덱스: CREATE INDEX idx_visits_cafe_visited_on_id ON cafe_project.visits (cafe_id, visited_on DESC, id DESC);
+  (함께 바꾼 SQL: ... WHERE cafe_id = ? ORDER BY visited_on DESC, id DESC LIMIT 10)
+컬럼 순서: cafe_id → visited_on DESC → id DESC
+  - cafe_id: 등호 조건이라 선두에 두었다. 이 카페의 방문 구간으로 바로 이동한다.
+  - visited_on DESC: 그 구간 안이 최근 날짜순으로 정렬되어 있으므로 Sort 없이 앞에서부터 10건을 읽고 바로 멈출 수 있다.
+    순서를 반대로 하면 이 효과가 없다. (DESC 없이 만들어도 B-tree를 거꾸로 읽으면 되지만, SQL의 정렬 방향과 맞췄다.)
+  - id DESC: 같은 날 방문이 여러 건일 때 순서를 하나로 정하는 동점 처리 기준이다. 이것이 없으면 LIMIT 10이
+    고르는 10건이 계획에 따라 달라졌다(위 AI 리뷰 반영 참고). SQL의 ORDER BY와 같은 순서로 넣어야 Sort가 생기지 않는다.
+  - 덤으로 FK 자식 컬럼(visits.cafe_id)을 선두로 덮어서, 카페 삭제 시 RESTRICT 검사(P07-MR09: 방문 기록이 있는 카페는 삭제 실패)도 이 인덱스로 처리된다.
+이 조회에 도움이 될 것으로 예상한 이유: scale 100에서 Seq Scan + Sort(192 Buffers)가 Index Scan(12 Buffers)으로 바뀌었다.
+  Sort 노드가 사라지고 읽은 행이 150 → 10으로 줄었으며, 결과 id 목록도 전후로 같아 예상대로 동작하는 것을 확인했다.
+  12 Buffers 중 10은 테이블 페이지다. 카페 7의 최근 10건이 테이블의 서로 다른 10개 페이지에 흩어져 있기 때문이다.
+쓰기/저장 비용: 방문 기록은 하루 0~몇 건 INSERT라 쓰기 비용은 사실상 무시할 수 있다.
+  저장 공간은 3만 행에서 936 kB로, v1의 (cafe_id, visited_on) 240 kB보다 약 4배 크다. v1은 같은 키(같은 카페·같은 날짜)가
+  많아 B-tree 중복 제거로 작게 저장됐지만, id가 들어가면 모든 키가 달라져 중복 제거가 되지 않는다.
+  결과를 하나로 정하는 정확성을 얻는 대신 저장 비용을 더 낸 것이다.
 현재 바로 적용 / 후보로 보류: **후보로 보류**.
   scale 1(현재 현실 규모)에서는 인덱스가 있어도 옵티마이저가 Seq Scan + Sort를 골랐다(테이블이 2페이지).
   지금 만들면 아무 조회도 빨라지지 않고 관리할 객체만 는다. 방문이 수천 건 이상 쌓여
@@ -782,7 +800,7 @@ Seq Scan이 나온 것은 옵티마이저가 "이 조회에는 인덱스가 더 
 컬럼 순서: 단일 컬럼 visit_id. 조건이 visit_id 등호 하나뿐이고, 같은 방문의 주문 행 순서는 중요하지 않다.
   (visit_id, menu_item_id)로 넓히는 것도 검토했지만 menu_item_id로 거르거나 정렬하는 반복 조회가 없어 이득이 없다.
 이 조회에 도움이 될 것으로 예상한 이유:
-  - scale 100: Seq Scan(331 Buffers, 59998행 버림) → Index Scan(9 Buffers). 결과 2행 동일.
+  - scale 100에서 Seq Scan(331 Buffers, 59998행 버림)이 Index Scan(9 Buffers)으로 바뀌었고, 결과는 2행으로 같았다.
   - scale 1에서도 옵티마이저가 이 인덱스를 선택했다(Bitmap Index Scan, 5 → 4 Buffers). 이득은 작지만 쓰인다.
   - FK 자식 컬럼이다. visits 한 건을 지우려고 할 때 ON DELETE RESTRICT 검사로 visit_items를 찾아야 하는데,
     인덱스가 없으면 매번 visit_items 전체를 읽는다.
@@ -799,10 +817,10 @@ Seq Scan이 나온 것은 옵티마이저가 "이 조회에는 인덱스가 더 
 필요한 데이터 규모: 방문 최소 수천~3만 건, 주문 6만 건 수준 (테이블이 수백 페이지가 되어야 Seq Scan과 차이가 드러남)
 필요한 데이터 분포: 카페 수십~200곳에 방문이 고르게 또는 단골 몇 곳에 쏠리게(쏠린 카페는 반환 비율이 커져 계획이 달라질 수 있음).
                    방문당 주문 1~3건, 날짜 3년 분포.
-비교할 SQL: P10-Q01 (cafe_id = ? ORDER BY visited_on DESC LIMIT 10),
+비교할 SQL: P10-Q01 (cafe_id = ? ORDER BY visited_on DESC, id DESC LIMIT 10),
            P10-Q02 (visit_items JOIN menu_items WHERE visit_id = ?)
 비교할 지표: 계획 노드(Seq Scan/Sort 유무 → Index Scan), Index Cond, actual rows,
-           Rows Removed by Filter, Buffers, Execution Time 5회 반복 중앙값·범위, 결과 행 수 동일성
+           Rows Removed by Filter, Buffers, Execution Time 5회 반복 중앙값·범위, 결과 id 목록 동일성
 현재 판단 상태: P10-Q01 = 보류 / P10-Q02 = 후보(적용 결정, 반영 대기)
 ```
 
@@ -812,93 +830,111 @@ Seq Scan이 나온 것은 옵티마이저가 "이 조회에는 인덱스가 더 
 
 # 14. AI를 실행 계획 리뷰어로 활용
 
-AI(Claude)에게 "인덱스 추천해줘"가 아니라 아래 정보를 함께 주고 후보 인덱스를 제안받은 뒤, 제안 각각을 같은 SQL의 전후 계획으로 검증했습니다.
+AI에게 인덱스를 바로 추천하게 하지 않고 실제 실행 계획과 조회 문맥을 제공합니다.
 
 ## 14-1. AI에게 전달한 정보
 
+별도 창의 AI에게 인덱스를 바로 추천해 달라고 하지 않고, 아래 정보를 함께 주고 질문했다.
+
 ```text
-업무 질문: P10-Q01 카페별 최근 방문 10건 / P10-Q02 방문 1건의 주문 내역 / (추가) 평점 4.0 이상 방문 목록
-PostgreSQL 버전: 18.6 (교재 기준 16과 다름, Skip Scan 존재)
-테이블 행 수: 실제 cafe_project는 0행. 검증용 합성 규모 scale 1 = 20/100/300/600, scale 100 = 200/1000/30000/60000
-데이터 분포: 카페당 방문 균등(scale 100에서 cafe_id 1개 = 150행 = 0.5%), 방문당 주문 2건,
-            rating은 3.0/3.5/4.0 세 값 균등 → rating >= 4.0은 약 33%
-기존 인덱스: PK 4개, uq_cafes_naver_place_id, uq_menu_items_cafe_name(cafe_id, name). FK 자식 컬럼 인덱스 없음
-SQL: cafe_index_experiment.sql의 3개 SELECT
-EXPLAIN (ANALYZE, BUFFERS) 핵심 결과: 인덱스 전 — Q01 Seq Scan + Sort 192 Buffers,
-            Q02 Seq Scan(Rows Removed 59998) 331 Buffers, rating 조회 Seq Scan 192 Buffers (scale 100)
+업무 질문:
+  P10-Q01 카페 상세 화면에서 이 카페의 최근 방문 10건(방문일, 평점)을 본다
+  P10-Q02 방문 기록 하나를 열면 그날 주문한 메뉴 이름과 가격을 본다
+PostgreSQL 버전: 18.6
+테이블 행 수 (합성 데이터, 수년 누적 가정): cafes 200 / menu_items 1000 / visits 30000 / visit_items 60000
+데이터 분포: 카페당 방문 약 150건(0.5%), 방문당 주문 2건, 평점 3.0/3.5/4.0 균등
+기존 인덱스: 각 테이블 PK, cafes(naver_place_id) UNIQUE, menu_items(cafe_id, name) UNIQUE
+SQL:
+  SELECT id, visited_on, rating FROM visits WHERE cafe_id = 7 ORDER BY visited_on DESC LIMIT 10;
+  SELECT vi.id, m.name, vi.price FROM visit_items vi JOIN menu_items m ON m.id = vi.menu_item_id WHERE vi.visit_id = 150;
+EXPLAIN (ANALYZE, BUFFERS) 핵심 결과 (인덱스 없음):
+  Q01: Limit ← Sort(top-N heapsort) ← Seq Scan on visits (rows 150), Buffers 192, 1.589 ms
+  Q02: Nested Loop ← Seq Scan on visit_items (Rows Removed by Filter 59998), Buffers 331, 2.354 ms
+질문: 이 두 조회에 어떤 인덱스를 추천하나요? 컬럼 순서와 이유, 그리고 만들지 말아야 할 인덱스가 있다면 함께 알려주세요.
 ```
 
 ## 14-2. AI 제안 검토
 
+AI 답변의 제안과 주장을 하나씩 같은 합성 데이터(scale 100)의 실제 실행 계획으로 확인했다.
+검증 SQL: [`ai_suggestion_check.sql`](./ai_suggestion_check.sql), 결과: [`plans/ai_suggestion_check.txt`](./plans/ai_suggestion_check.txt)
+
 | AI 제안 | 수용 / 수정 / 보류 / 거절 | 실제 계획/데이터 근거 | 최종 판단 |
 | --- | --- | --- | --- |
-| `visit_items(visit_id)` — FK 자식 + 상세 조회 | **수용** | scale 100: 331 → 9 Buffers, Seq Scan → Index Scan. scale 1에서도 계획에 선택됨. 결과 2행 동일 | 다음 스키마 변경 때 적용 |
-| `visits(cafe_id, visited_on)` — 처음 제안은 `visits(cafe_id)` 단독 | **수정 후 보류** | 단독 `(cafe_id)`면 찾은 150행을 다시 Sort해야 한다. `visited_on`을 뒤에 붙이자 Sort 노드가 사라지고 Index Scan Backward로 10행만 읽음(192 → 12). 하지만 scale 1에서는 옵티마이저가 인덱스를 무시 | 컬럼은 `(cafe_id, visited_on)`으로 확정, 적용은 데이터가 쌓인 뒤 |
-| `visits(rating)` — "평점으로 자주 거르니 인덱스" | **거절(보류)** | scale 100에서 Bitmap Index Scan이 선택되고 시간도 2.87 → 1.44 ms(1회)로 줄었지만, 반환 비율 33%, **Buffers 192 → 221로 증가**, 인덱스 672 kB. 그리고 이 조회는 내 반복 질문 목록(P10-Q01·Q02)에 없다 | 만들지 않음 |
+| Q01: `visits (cafe_id, visited_on DESC, id DESC)`를 만들고 SQL에 `id DESC`를 추가해 같은 날짜의 순서를 정하라 | **수용** (적용 시점은 보류) | 카페 7은 방문 150건이 5개 날짜에 몰려 최근 날짜에 30건이 동점이었다. 원래 SQL은 인덱스가 없을 때 id 806~9806, 있을 때 id 20806~29806을 돌려줘 **결과 자체가 달라졌다**. 제안대로 바꾸자 Sort가 사라지고(Limit ← Index Scan) Buffers 192 → 12, 결과 id 목록도 전후로 같아졌다. 단 AI가 예상한 "Buffers 3~4"는 틀렸다(최근 10건이 서로 다른 테이블 10페이지에 흩어져 있어 12). 인덱스 크기도 240 kB → 936 kB로 커졌다 | SQL과 인덱스 정의는 채택(13장 v2). 지금 규모에서는 옵티마이저가 쓰지 않으므로 데이터가 쌓인 뒤 적용 |
+| Q01: `INCLUDE (rating)`은 선택 사항이고 차이가 거의 없다 | **보류** | VACUUM 전에는 Index Only Scan이어도 Heap Fetches 10으로 Buffers 12 그대로였다. VACUUM 후에만 Heap Fetches 0, Buffers 12 → 3이 됐다. 대신 인덱스가 936 kB → 1200 kB로 커졌다. "차이가 거의 없다"는 VACUUM 상태에 따라 맞기도 틀리기도 하다 | 만들지 않음. 카페 상세 화면 호출이 매우 잦아질 때 다시 검토 |
+| Q02: `visit_items (visit_id)` 단일 인덱스. 예상 계획은 Nested Loop ← Index Scan + menu_items_pkey | **수용** | 예상한 계획 그대로 나왔다. Rows Removed by Filter 59998이 사라지고 Buffers 331 → 9, 결과 id(299, 300) 동일. FK 자식 컬럼이라 visits 삭제 시 RESTRICT 검사에도 쓰인다 | 적용 결정 (다음 cafe_project 스키마 변경 때 반영) |
+| `visits (rating)`은 선택도 33%라 플래너가 Seq Scan을 고르므로 만들지 마라 | 결론은 **수용**, 근거는 **거절** | 실제로는 플래너가 Seq Scan이 아니라 **Bitmap Heap Scan**을 골랐다(`>= 4.0`과 `= 3.5` 모두). 다만 Buffers가 192 → 221로 오히려 늘었고, rating은 반복 조회의 WHERE에 쓰이지 않는다 | 만들지 않음 (근거: 반복 조회가 아니고 읽는 페이지가 늘어남) |
+| `(cafe_id)`와 `(visited_on)`을 따로 만들지 마라. 합쳐도 정렬 순서를 못 얻어 Sort가 다시 생긴다 | **수용** | Sort가 다시 생겼다(Incremental Sort). 그런데 AI가 말한 Bitmap AND가 아니라 날짜 인덱스를 거꾸로 훑으며 11760행을 버렸고, **Buffers 11791**로 인덱스가 없을 때(192)보다 훨씬 나빴다 | 만들지 않음 |
 
 ### AI가 제안한 인덱스 중 만들지 않기로 한 것이 있다면 이유
 
 ```text
-visits(rating)을 만들지 않기로 했다.
-1. 반복 조회가 아니다. "평점 4.0 이상 방문 전체"는 가끔 궁금해서 보는 질문이지 화면을 열 때마다 실행되는 조회가 아니다.
-2. 반환 비율이 33%로 크다. 실제로 인덱스를 쓰자 읽은 페이지가 192 → 221로 오히려 늘었다
-   (인덱스 페이지 29개 추가 + 결국 테이블 전부 방문, Heap Blocks 192).
-3. 시간이 줄어든 것은 1회 측정이고, Bitmap Heap Scan이 3.0/3.5 행을 Filter로 걸러내는 CPU를
-   아낀 효과다. 내 개인 기록 규모(scale 1)에서는 Seq Scan 그대로였다.
-4. 저장 672 kB와 방문 INSERT/평점 수정마다의 갱신 비용이 반복 조회 이득 없이 생긴다.
+1. INCLUDE (rating)
+   Index Only Scan의 효과는 VACUUM으로 visibility map이 만들어진 뒤에만 나타났다(Buffers 12 → 3).
+   VACUUM 전에는 테이블을 똑같이 10번 읽었다. 그 대가로 인덱스가 936 kB에서 1200 kB로 커진다.
+   개인 기록 규모에서 카페 상세 화면 호출이 그만큼 잦지 않으므로 지금은 만들지 않았다.
+
+2. visits (rating)
+   AI의 결론(만들지 말 것)에는 동의하지만 이유는 다르다. 플래너는 이 인덱스를 실제로 사용했다.
+   만들지 않은 이유는 rating이 반복 조회의 조건이 아니고, 33%를 돌려주는 조건이라 인덱스를 써도
+   읽는 페이지가 192 → 221로 늘었기 때문이다.
+
+3. Q01 인덱스 자체도 지금 바로 만들지는 않았다
+   제안 내용은 맞았지만, 현재 규모(방문 300건, 테이블 2페이지)에서는 옵티마이저가 인덱스를 무시하고
+   Seq Scan + Sort를 골랐다(13장 scale 1). 데이터가 쌓여 계획이 바뀌는 것을 확인한 뒤 적용한다.
 ```
 
 ### AI가 PostgreSQL 버전이나 데이터 분포를 무시하고 단정한 내용이 있었나요?
 
 ```text
-있었다. 두 가지를 실제 결과로 바로잡았다.
-1. 버전: "PostgreSQL 18에는 Skip Scan이 있으니 (course_id, status) 인덱스로 status 단독 조회도
-   빨라질 수 있다"는 일반론. 실제 18.6에서는 Seq Scan이 유지되었고, 강제해도 Skip Scan이 아니라
-   인덱스 전체 1회 탐색(Index Searches: 1)이었으며 더 느렸다(17.2 ms vs 7.7 ms).
-   course_id가 2000종류라 Skip Scan의 이득이 없다는 "데이터 분포"를 빼고 버전만 보고 말한 것이다.
-2. 분포: rating 조회의 반환 비율을 처음에 "약 2/3"라고 적었는데, 생성 규칙(3.0/3.5/4.0 균등)과
-   실제 COUNT(10000/30000)를 확인해 보니 약 33%였다. 비율 숫자도 추정하지 말고 COUNT로 확인해야 한다.
+있었다.
+1. "Buffers는 3~4 정도"라고 단정했지만 실제는 12였다. 인덱스로 10건을 찾아도 그 10건이 테이블의 서로 다른
+   10개 페이지에 흩어져 있으면 테이블 페이지를 10번 읽어야 한다. 데이터가 테이블에 어떻게 배치되어 있는지는
+   고려하지 않은 예측이었다.
+2. "선택도 33%라 플래너는 Seq Scan을 고른다"고 단정했지만 PostgreSQL 18.6은 Bitmap Heap Scan을 골랐다.
+   결론은 맞았지만 근거가 실제 계획과 달랐다.
+3. INCLUDE의 효과를 "차이가 거의 없다"고 했지만 VACUUM 상태에 따라 Buffers가 12 또는 3으로 달랐다.
+   visibility map이라는 조건을 빼고 단정했다.
+
+반대로 동점(같은 날짜) 지적은 내 데이터 분포에서 실제로 결과를 바꾸는 문제였고, 나는 결과 행을
+개수로만 비교하느라 이것을 놓쳤었다(13장 v1).
 ```
 
 ### AI가 만든 인덱스 제안을 실제 계획 없이 채택하면 위험한 이유
 
 ```text
-- AI는 내 데이터 분포와 규모를 모른다. 같은 visits(cafe_id, visited_on)도 300행일 때는 쓰이지 않고
-  3만 행일 때만 쓰였다. 계획 없이 채택하면 "아무 효과 없는 인덱스"를 만들게 된다.
-- AI의 그럴듯한 이유("평점으로 자주 거른다", "18이면 Skip Scan")는 실제로 Buffers가 늘거나
-  계획이 안 바뀌는 경우가 있었다. 말이 아니라 계획·Buffers·결과 행으로만 검증된다.
-- 컬럼 순서를 잘못 받으면 겉보기엔 인덱스가 쓰이는데 Sort가 남는 등 효과가 반쪽이 된다
-  (cafe_id 단독 vs (cafe_id, visited_on)).
-- 인덱스는 만들면 끝이 아니라 모든 쓰기에 비용을 남긴다(11장 실측 약 6.8배). 검증 안 된 인덱스가
-  쌓이면 쓰기 성능·저장 공간만 잃는다.
-- 운영 테이블에서 CREATE INDEX는 쓰기를 막는 잠금을 잡는다. 근거 없이 만들었다 지웠다 하는 것 자체가 장애 위험이다.
+- 맞는 결론에 틀린 근거가 붙어 있을 수 있다. rating 인덱스는 "Seq Scan이 나와서"가 아니라
+  "인덱스를 써서 오히려 더 많이 읽어서" 만들지 않는 것이었다. 근거가 틀리면 데이터가 바뀌었을 때
+  판단도 틀린다.
+- 숫자 예측이 빗나간다. "Buffers 3~4"를 믿었다면 실제 12를 보고 무언가 잘못됐다고 오해했을 것이다.
+- 숨은 비용을 놓친다. id를 붙인 Q01 인덱스는 결과를 정확하게 해 주었지만 크기가 4배가 됐고,
+  INCLUDE는 VACUUM이 되어야만 효과가 났다. 이런 비용은 실제로 만들어 보고 재야 보인다.
+- 반대로, 실제로 확인해 봐야 가치 있는 지적도 알아볼 수 있다. 동점 지적은 계획 비교에서 결과 id 목록까지
+  확인하고 나서야 결과를 바꾸는 문제였음이 드러났다.
+- AI는 내 데이터 규모를 직접 보지 못한다. 같은 Q01 인덱스도 300행일 때는 쓰이지 않고 3만 행일 때만 쓰였다.
 ```
 
 ---
 
 # 15. 최종 성찰
 
+아래 문장은 본인의 말로 작성합니다.
+
 ```text
 1. 인덱스가 필요한지 판단할 때 가장 먼저 확인할 것은
-   "어떤 반복 조회가 그 컬럼을 어떻게(등호/정렬/LIMIT) 쓰고, 전체의 몇 %를 돌려주는지"와
-   인덱스 없는 상태의 기준 실행 계획에서 Rows Removed by Filter와 Buffers로 드러나는 낭비 이다.
+   기준 계획에서 버리는 행과 읽는 페이지가 얼마나 많은지이다.
 
 2. 같은 SQL의 인덱스 전후를 비교할 때 통제해야 할 조건은
-   SQL 문장(조건값·정렬·LIMIT), 데이터와 테이블 통계(중간에 ANALYZE·데이터 변경 금지),
-   planner 설정(enable_* = on), 캐시 상태, PostgreSQL 버전, 그리고 반복 측정 횟수 이다.
+   결과를 개수가 아니라 실제 행으로 비교하는 것, 데이터, 통계이다.
 
 3. Seq Scan이 항상 나쁜 것이 아닌 이유는
-   많은 행(이번 실습 30%)을 돌려주거나 테이블이 작으면 순서대로 한 번 읽는 것이 인덱스를 거쳐
-   왔다 갔다 하는 것보다 싸기 때문이다. 실제로 강제 Index 계획은 Buffers 736 → 864, 7.7 → 17.2 ms로 더 나빴다 이다.
+   많은 행을 돌려줘야 할 때는 인덱스를 거치면 오히려 더 많은 페이지를 읽게 되기 때문이다.
 
 4. 실행 시간 한 번보다 계획과 Buffers를 함께 보는 이유는
-   시간은 캐시·부하로 흔들려서(같은 계획·같은 736 Buffers인데 6.9 vs 7.7 ms) 작은 차이를 판단할 수 없지만,
-   계획 노드·Index Cond·Buffers는 "무엇을 얼마나 읽었는지"를 안정적으로 보여주기 때문 이다.
+   계획과 Buffers는 실제로 무엇을 얼마나 읽었는지를 보여주기 때문이다.
 
 5. 내 개인 프로젝트에서 아직 인덱스를 보류한 후보가 있다면 그 이유는
-   visits(cafe_id, visited_on)이 지금 현실 규모(방문 수백 건)에서는 옵티마이저가 사용하지 않아
-   얻는 것 없이 관리 대상만 늘기 때문이며, 방문이 수천 건 이상 쌓여 실제 계획에 Seq Scan + Sort의 낭비가
-   보일 때 다시 측정해 적용하기 위해서 이다.
+   카페별 최근 방문 인덱스가 지금 기록 규모에서는 실제 계획에 쓰이지 않기 때문이다.
 ```
 
 ---

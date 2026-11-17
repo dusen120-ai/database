@@ -1,0 +1,258 @@
+                                                      version                                                      
+-------------------------------------------------------------------------------------------------------------------
+ PostgreSQL 18.6 on aarch64-apple-darwin24.6.0, compiled by Apple clang version 17.0.0 (clang-1700.0.13.5), 64-bit
+(1개 행)
+
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+INSERT 0 200
+INSERT 0 1000
+INSERT 0 30000
+INSERT 0 60000
+ANALYZE
+ANALYZE
+ANALYZE
+ANALYZE
+=== [주장 2] 카페 7의 방문 날짜 분포 (같은 날 방문이 여러 건인가)
+ visits | distinct_dates 
+--------+----------------
+    150 |              5
+(1개 행)
+
+=== [주장 2] 현재 SQL의 최근 10건: 동점(같은 날짜)이 있는가
+ visited_on | count 
+------------+-------
+ 2025-03-17 |    10
+(1개 행)
+
+ visited_on | count 
+------------+-------
+ 2025-03-17 |    30
+ 2024-08-29 |    30
+ 2024-02-11 |    30
+ 2023-07-26 |    30
+ 2023-01-07 |    30
+(5개 행)
+
+########## [주장 1] AI 추천 Q01 인덱스 (cafe_id, visited_on DESC, id DESC)
+CREATE INDEX
+=== Q01 원래 SQL
+                                                          QUERY PLAN                                                          
+------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.29..29.53 rows=10 width=13) (actual time=0.021..0.027 rows=10.00 loops=1)
+   Buffers: local hit=10 read=2
+   ->  Index Scan using ai_q01 on visits  (cost=0.29..438.88 rows=150 width=13) (actual time=0.020..0.026 rows=10.00 loops=1)
+         Index Cond: (cafe_id = 7)
+         Index Searches: 1
+         Buffers: local hit=10 read=2
+ Planning:
+   Buffers: shared hit=27, local read=1
+ Planning Time: 0.183 ms
+ Execution Time: 0.037 ms
+(10개 행)
+
+=== Q01 AI가 권한 SQL (id DESC 동점 처리)
+                                                          QUERY PLAN                                                          
+------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.29..29.53 rows=10 width=13) (actual time=0.004..0.007 rows=10.00 loops=1)
+   Buffers: local hit=12
+   ->  Index Scan using ai_q01 on visits  (cost=0.29..438.88 rows=150 width=13) (actual time=0.004..0.006 rows=10.00 loops=1)
+         Index Cond: (cafe_id = 7)
+         Index Searches: 1
+         Buffers: local hit=12
+ Planning:
+   Buffers: shared hit=4
+ Planning Time: 0.027 ms
+ Execution Time: 0.011 ms
+(10개 행)
+
+  id   | visited_on | rating 
+-------+------------+--------
+ 29806 | 2025-03-17 |    3.5
+ 28806 | 2025-03-17 |    3.0
+ 27806 | 2025-03-17 |    4.0
+ 26806 | 2025-03-17 |    3.5
+ 25806 | 2025-03-17 |    3.0
+ 24806 | 2025-03-17 |    4.0
+ 23806 | 2025-03-17 |    3.5
+ 22806 | 2025-03-17 |    3.0
+ 21806 | 2025-03-17 |    4.0
+ 20806 | 2025-03-17 |    3.5
+(10개 행)
+
+=== Q01 카페 7의 최근 10건이 테이블의 몇 개 페이지에 흩어져 있는가
+ heap_pages 
+------------
+         10
+(1개 행)
+
+########## [주장 3] INCLUDE (rating) 추가 시
+DROP INDEX
+CREATE INDEX
+=== VACUUM 전 (visibility map 없음)
+                                                              QUERY PLAN                                                               
+---------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.29..29.53 rows=10 width=13) (actual time=0.020..0.026 rows=10.00 loops=1)
+   Buffers: local hit=10 read=2
+   ->  Index Only Scan using ai_q01_inc on visits  (cost=0.29..438.88 rows=150 width=13) (actual time=0.020..0.024 rows=10.00 loops=1)
+         Index Cond: (cafe_id = 7)
+         Heap Fetches: 10
+         Index Searches: 1
+         Buffers: local hit=10 read=2
+ Planning:
+   Buffers: shared hit=25, local read=1
+ Planning Time: 0.176 ms
+ Execution Time: 0.034 ms
+(11개 행)
+
+VACUUM
+=== VACUUM 후
+                                                             QUERY PLAN                                                              
+-------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.29..0.73 rows=10 width=13) (actual time=0.024..0.025 rows=10.00 loops=1)
+   Buffers: local hit=3
+   ->  Index Only Scan using ai_q01_inc on visits  (cost=0.29..6.91 rows=150 width=13) (actual time=0.023..0.024 rows=10.00 loops=1)
+         Index Cond: (cafe_id = 7)
+         Heap Fetches: 0
+         Index Searches: 1
+         Buffers: local hit=3
+ Planning:
+   Buffers: shared hit=4
+ Planning Time: 0.054 ms
+ Execution Time: 0.032 ms
+(11개 행)
+
+ include_index_size 
+--------------------
+ 1200 kB
+(1개 행)
+
+DROP INDEX
+CREATE INDEX
+ q01_index_size 
+----------------
+ 936 kB
+(1개 행)
+
+########## [주장 4] AI 추천 Q02 인덱스 visit_items (visit_id)
+=== 인덱스 전
+                                                               QUERY PLAN                                                               
+----------------------------------------------------------------------------------------------------------------------------------------
+ Nested Loop  (cost=0.28..1091.60 rows=2 width=18) (actual time=0.024..2.332 rows=2.00 loops=1)
+   Buffers: local hit=331
+   ->  Seq Scan on visit_items vi  (cost=0.00..1075.00 rows=2 width=12) (actual time=0.019..2.326 rows=2.00 loops=1)
+         Filter: (visit_id = 150)
+         Rows Removed by Filter: 59998
+         Buffers: local hit=325
+   ->  Index Scan using menu_items_pkey on menu_items m  (cost=0.28..8.29 rows=1 width=14) (actual time=0.002..0.002 rows=1.00 loops=2)
+         Index Cond: (id = vi.menu_item_id)
+         Index Searches: 2
+         Buffers: local hit=6
+ Planning:
+   Buffers: shared hit=56, local hit=8
+ Planning Time: 0.246 ms
+ Execution Time: 2.344 ms
+(14개 행)
+
+CREATE INDEX
+=== 인덱스 후
+                                                               QUERY PLAN                                                               
+----------------------------------------------------------------------------------------------------------------------------------------
+ Nested Loop  (cost=0.56..24.93 rows=2 width=18) (actual time=0.016..0.018 rows=2.00 loops=1)
+   Buffers: local hit=7 read=2
+   ->  Index Scan using ai_q02 on visit_items vi  (cost=0.29..8.32 rows=2 width=12) (actual time=0.012..0.013 rows=2.00 loops=1)
+         Index Cond: (visit_id = 150)
+         Index Searches: 1
+         Buffers: local hit=1 read=2
+   ->  Index Scan using menu_items_pkey on menu_items m  (cost=0.28..8.29 rows=1 width=14) (actual time=0.001..0.001 rows=1.00 loops=2)
+         Index Cond: (id = vi.menu_item_id)
+         Index Searches: 2
+         Buffers: local hit=6
+ Planning:
+   Buffers: shared hit=18, local hit=6 read=1
+ Planning Time: 0.180 ms
+ Execution Time: 0.029 ms
+(14개 행)
+
+########## [주장 5] visits (rating): 플래너가 Seq Scan을 고르는가
+ rating_ge_4 | pct  
+-------------+------
+       10000 | 33.3
+(1개 행)
+
+CREATE INDEX
+                                                           QUERY PLAN                                                           
+--------------------------------------------------------------------------------------------------------------------------------
+ Bitmap Heap Scan on visits  (cost=189.79..506.79 rows=10000 width=12) (actual time=0.380..1.237 rows=10000.00 loops=1)
+   Recheck Cond: (rating >= 4.0)
+   Heap Blocks: exact=192
+   Buffers: local hit=192 read=29
+   ->  Bitmap Index Scan on cmp_rating  (cost=0.00..187.29 rows=10000 width=0) (actual time=0.353..0.354 rows=10000.00 loops=1)
+         Index Cond: (rating >= 4.0)
+         Index Searches: 1
+         Buffers: local read=29
+ Planning:
+   Buffers: shared hit=18, local read=1
+ Planning Time: 0.187 ms
+ Execution Time: 1.594 ms
+(12개 행)
+
+                                                           QUERY PLAN                                                           
+--------------------------------------------------------------------------------------------------------------------------------
+ Bitmap Heap Scan on visits  (cost=189.79..506.79 rows=10000 width=12) (actual time=0.344..1.131 rows=10000.00 loops=1)
+   Recheck Cond: (rating = 3.5)
+   Heap Blocks: exact=192
+   Buffers: local hit=194 read=27
+   ->  Bitmap Index Scan on cmp_rating  (cost=0.00..187.29 rows=10000 width=0) (actual time=0.328..0.328 rows=10000.00 loops=1)
+         Index Cond: (rating = 3.5)
+         Index Searches: 1
+         Buffers: local hit=2 read=27
+ Planning:
+   Buffers: shared hit=6
+ Planning Time: 0.035 ms
+ Execution Time: 1.475 ms
+(12개 행)
+
+DROP INDEX
+########## [주장 6] (cafe_id), (visited_on) 단일 인덱스 2개만 있을 때
+DROP INDEX
+CREATE INDEX
+CREATE INDEX
+                                                                   QUERY PLAN                                                                   
+------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=10.39..104.29 rows=10 width=13) (actual time=1.588..1.595 rows=10.00 loops=1)
+   Buffers: local hit=11791 read=13
+   ->  Incremental Sort  (cost=10.39..1419.02 rows=150 width=13) (actual time=1.587..1.593 rows=10.00 loops=1)
+         Sort Key: visited_on DESC, id DESC
+         Presorted Key: visited_on
+         Full-sort Groups: 1  Sort Method: top-N heapsort  Average Memory: 25kB  Peak Memory: 25kB
+         Buffers: local hit=11791 read=13
+         ->  Index Scan Backward using cmp_date on visits  (cost=0.29..1412.62 rows=150 width=13) (actual time=0.812..1.576 rows=31.00 loops=1)
+               Filter: (cafe_id = 7)
+               Rows Removed by Filter: 11760
+               Index Searches: 1
+               Buffers: local hit=11791 read=13
+ Planning:
+   Buffers: shared hit=27, local read=2
+ Planning Time: 0.212 ms
+ Execution Time: 1.630 ms
+(16개 행)
+
+########## [주장 2 추가] 동점이 있을 때 원래 SQL의 결과가 계획에 따라 달라지는가
+DROP INDEX
+DROP INDEX
+=== 인덱스 없음 (Seq Scan + Sort)
+                       ids                        
+--------------------------------------------------
+ 806,1806,2806,3806,4806,5806,6806,7806,8806,9806
+(1개 행)
+
+CREATE INDEX
+=== AI 추천 인덱스 있음 (Index Scan)
+                             ids                             
+-------------------------------------------------------------
+ 20806,21806,22806,23806,24806,25806,26806,27806,28806,29806
+(1개 행)
+
